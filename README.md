@@ -11,7 +11,7 @@ Prototipo demostrativo del circuito de firma remota de actas de audiencias de me
    - **Simulado:** enlace y código por SMS simulados dentro de la página (pestaña *Bandeja simulada*).
    - **Correo real (Microsoft 365):** el acta se envía desde la casilla institucional del/la mediador/a (Microsoft Graph `Mail.Send`, mismo registro de aplicación que `ficha`), con un código personal por parte. La parte responde desde su casilla con «PRESTO CONFORMIDAD» y su código; *Buscar respuestas en mi bandeja* (Graph `Mail.Read`) verifica remitente, frase y código y registra la conformidad. Si `Mail.Read` no está autorizado, el/la mediador/a puede registrar la respuesta verificada en Outlook.
 3. **Firma digital del mediador/a:** se habilita cuando todas las partes prestaron conformidad.
-4. **Acta final:** incluye tabla de conformidades, huellas y QR de verificación.
+4. **Acta final:** incluye tabla de conformidades, huellas y QR de verificación. Se puede descargar en PDF y **enviar a las partes** desde la casilla institucional del/la mediador/a (un correo individual por parte, con el PDF y, si corresponde, el documento original).
 
 Además, la página incluye una verificación de autenticidad por huella y un registro probatorio encadenado.
 
