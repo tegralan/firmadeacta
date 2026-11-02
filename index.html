@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firma Remota de Actas</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#f3f5f8; --card:#ffffff; --ink:#1c2533; --muted:#5b6575; --line:#d9dee6;
+  --pri:#1f4e79; --pri-2:#2e6aa3; --ok:#1e7a46; --ok-bg:#e6f4ec; --warn:#9a6700; --warn-bg:#fff6dc;
+  --err:#a12a2a; --err-bg:#fbe9e9; --chip:#eef2f7;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+.banner{background:#7a1f1f;color:#fff;text-align:center;padding:6px 12px;font-size:13px;font-weight:600;letter-spacing:.3px}
+header{background:var(--pri);color:#fff;padding:14px 20px}
+header h1{margin:0;font-size:19px;font-weight:600}
+header p{margin:2px 0 0;font-size:13px;opacity:.85}
+nav{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--line);padding:0 16px;overflow-x:auto}
+nav button{border:0;background:none;padding:12px 14px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.act{color:var(--pri);border-bottom-color:var(--pri);font-weight:600}
+main{max-width:1000px;margin:0 auto;padding:18px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:16px}
+.card h2{margin:0 0 4px;font-size:17px;color:var(--pri)}
+.card .sub{margin:0 0 14px;color:var(--muted);font-size:13px}
+.steps{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.step{flex:1;min-width:150px;padding:8px 10px;border-radius:6px;background:var(--chip);font-size:13px;color:var(--muted)}
+.step b{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.step.cur{background:var(--pri);color:#fff}
+.step.done{background:var(--ok-bg);color:var(--ok)}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font:inherit;background:#fff;color:var(--ink)}
+textarea{min-height:150px;resize:vertical}
+input:disabled,textarea:disabled,select:disabled{background:#f1f3f6;color:#444}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 14px}
+.party{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-top:10px;background:#fafbfd}
+.party-h{display:flex;justify-content:space-between;align-items:center}
+.party-h strong{font-size:14px}
+.btn{display:inline-block;border:0;border-radius:6px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer;background:var(--pri);color:#fff}
+.btn:hover{background:var(--pri-2)}
+.btn.sec{background:#fff;color:var(--pri);border:1px solid var(--pri)}
+.btn.ok{background:var(--ok)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn.link{background:none;color:var(--err);padding:4px;font-weight:400}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.check{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px}
+.check input{width:auto;margin-top:3px}
+.hash{font-family:Consolas,"Courier New",monospace;font-size:12px;word-break:break-all;background:var(--chip);padding:6px 8px;border-radius:4px}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+.pill.pend{background:var(--warn-bg);color:var(--warn)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.sent{background:#e7eef8;color:var(--pri)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)}
+.mail{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-top:8px;background:#fff}
+.mail .meta{font-size:12px;color:var(--muted)}
+.note{background:var(--warn-bg);color:#5c4300;border-radius:6px;padding:10px 12px;font-size:13px;margin-top:12px}
+.okbox{background:var(--ok-bg);color:var(--ok);border-radius:6px;padding:10px 12px;font-size:14px;margin-top:12px}
+.errbox{background:var(--err-bg);color:var(--err);border-radius:6px;padding:10px 12px;font-size:14px;margin-top:12px}
+.hidden{display:none!important}
+/* Modal parte */
+.modal{position:fixed;inset:0;background:rgba(20,28,40,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;z-index:20}
+.modal .box{background:#fff;border-radius:8px;max-width:640px;width:100%;padding:0;overflow:hidden}
+.modal .bh{background:var(--pri);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+.modal .bb{padding:16px}
+.actatext{white-space:pre-wrap;border:1px solid var(--line);border-radius:6px;padding:10px 12px;background:#fafbfd;max-height:260px;overflow:auto;font-size:14px}
+.sms{background:#e9f7ef;border:1px dashed var(--ok);border-radius:6px;padding:8px 10px;font-size:13px;margin-top:10px}
+/* Acta final */
+.doc{background:#fff;border:1px solid var(--line);padding:32px 36px;font-family:Georgia,"Times New Roman",serif;font-size:14px}
+.doc h3{text-align:center;margin:0 0 4px;font-size:16px;letter-spacing:.5px}
+.doc .org{text-align:center;font-size:12px;color:#444;margin-bottom:16px}
+.doc .cuerpo{white-space:pre-wrap;text-align:justify;margin:14px 0}
+.doc table{font-family:"Segoe UI",Arial,sans-serif;font-size:12px}
+.firma{display:flex;gap:20px;align-items:center;border:1px solid #9bb0c8;border-radius:6px;padding:12px;margin-top:18px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px}
+.firma #qr img,.firma #qr canvas{width:110px!important;height:110px!important}
+.wm{color:#a12a2a;font-family:"Segoe UI",Arial,sans-serif;font-size:11px;text-align:center;margin-top:14px}
+@media print{
+  .banner,header,nav,.noprint,#tab-verificar,#tab-registro{display:none!important}
+  body{background:#fff}
+  main{padding:0;max-width:none}
+  .card{border:0;padding:0}
+  .doc{border:0;padding:0}
+}
+</style>
+</head>
+<body>
+<div class="banner">PROTOTIPO DEMOSTRATIVO — USAR EXCLUSIVAMENTE DATOS FICTICIOS — SIN VALIDEZ JURÍDICA</div>
+<header>
+  <h1>Firma Remota de Actas de Mediación</h1>
+  <p>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura CABA</p>
+</header>
+<nav>
+  <button class="act" data-tab="circuito">Circuito del acta</button>
+  <button data-tab="bandeja">Bandeja simulada (partes)</button>
+  <button data-tab="verificar">Verificar acta</button>
+  <button data-tab="registro">Registro probatorio</button>
+</nav>
+
+<main>
+<!-- ===================== CIRCUITO ===================== -->
+<section id="tab-circuito">
+  <div class="steps noprint" id="steps">
+    <div class="step" data-s="1"><b>Paso 1</b>Redacción y bloqueo</div>
+    <div class="step" data-s="2"><b>Paso 2</b>Conformidad de las partes</div>
+    <div class="step" data-s="3"><b>Paso 3</b>Firma digital del mediador</div>
+    <div class="step" data-s="4"><b>Paso 4</b>Acta final</div>
+  </div>
+
+  <!-- Paso 1 -->
+  <div class="card noprint" id="p1">
+    <h2>1. Redacción del acta (mediador/a)</h2>
+    <p class="sub">El texto se redacta durante o al cierre de la audiencia virtual. Al bloquearlo se calcula su huella digital (SHA-256) y ya no puede modificarse.</p>
+    <div class="row" style="margin-top:0"><button class="btn sec sm" id="btnEjemplo">Cargar ejemplo ficticio</button></div>
+    <div class="grid">
+      <div><label>N.º de legajo</label><input id="f_numero" placeholder="MED-0000/2026"></div>
+      <div><label>CUIJ (ficticio)</label><input id="f_cuij" placeholder="J-00-00000000-0/2026-0"></div>
+      <div><label>Tipo de acta</label>
+        <select id="f_tipo"><option>Acta de acuerdo</option><option>Acta de cierre sin acuerdo</option><option>Acta de audiencia (continuación)</option></select></div>
+      <div><label>Mediador/a</label><input id="f_mediador" placeholder="Nombre y apellido"></div>
+      <div><label>Fecha de audiencia</label><input id="f_fecha" type="date"></div>
+      <div><label>Modalidad</label><select id="f_modalidad"><option>Virtual (Microsoft Teams)</option><option>Mixta</option></select></div>
+    </div>
+
+    <label style="margin-top:16px">Partes intervinientes</label>
+    <div id="partes"></div>
+    <div class="row"><button class="btn sec sm" id="btnAddParte">+ Agregar parte</button></div>
+
+    <label style="margin-top:16px">Texto del acta</label>
+    <textarea id="f_texto" placeholder="Redacción del acta / acuerdo…"></textarea>
+
+    <div class="check"><input type="checkbox" id="f_lectura"><span>Dejo constancia de que el acta fue leída en la audiencia virtual y de que cada parte manifestó verbalmente su conformidad.</span></div>
+    <div id="p1err" class="errbox hidden"></div>
+    <div class="row"><button class="btn" id="btnBloquear">Bloquear texto y generar acta</button></div>
+  </div>
+
+  <!-- Paso 2 -->
+  <div class="card noprint hidden" id="p2">
+    <h2>2. Conformidad electrónica de las partes</h2>
+    <p class="sub">Cada parte recibe en su correo constituido un enlace único. Para prestar conformidad debe validar un código enviado a su teléfono. Abrí la pestaña <b>Bandeja simulada</b> para actuar como cada parte.</p>
+    <div><label>Huella del acta (SHA-256)</label><div class="hash" id="p2hash"></div></div>
+    <div style="margin-top:12px;overflow-x:auto">
+      <table><thead><tr><th>Parte</th><th>Correo</th><th>Estado</th><th></th></tr></thead><tbody id="p2tabla"></tbody></table>
+    </div>
+    <div class="row"><button class="btn sec" id="btnEnviarTodos">Enviar enlaces a todas las partes</button></div>
+    <div class="note">En el sistema real el envío se haría desde una casilla institucional y el código por SMS. Aquí ambos se simulan dentro de la página.</div>
+  </div>
+
+  <!-- Paso 3 -->
+  <div class="card noprint hidden" id="p3">
+    <h2>3. Firma digital del mediador/a</h2>
+    <p class="sub">Con todas las conformidades reunidas, el/la mediador/a firma digitalmente el acta. En el sistema real se usaría la Plataforma de Firma Digital Remota (firma PAdES sobre el PDF).</p>
+    <div id="p3estado"></div>
+    <div class="row"><button class="btn ok" id="btnFirmar" disabled>Firmar digitalmente (simulación)</button></div>
+  </div>
+
+  <!-- Paso 4 -->
+  <div class="card hidden" id="p4">
+    <div class="row noprint" style="margin-top:0;justify-content:space-between">
+      <h2 style="margin:0">4. Acta final</h2>
+      <div><button class="btn sec sm" onclick="window.print()">Imprimir / Guardar PDF</button>
+      <button class="btn sec sm" id="btnNueva">Nueva acta</button></div>
+    </div>
+    <div class="doc" id="doc" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- ===================== BANDEJA ===================== -->
+<section id="tab-bandeja" class="hidden">
+  <div class="card">
+    <h2>Bandeja de correo simulada</h2>
+    <p class="sub">Representa los correos que recibiría cada parte. Abrí el enlace para ver la pantalla de conformidad tal como la vería la parte.</p>
+    <div id="bandeja"><p class="sub">Todavía no se enviaron enlaces.</p></div>
+  </div>
+</section>
+
+<!-- ===================== VERIFICAR ===================== -->
+<section id="tab-verificar" class="hidden">
+  <div class="card">
+    <h2>Verificación de autenticidad</h2>
+    <p class="sub">Ingresá la huella SHA-256 impresa en el acta (o escaneá su QR) para comprobar que el documento existe y no fue alterado.</p>
+    <label>Huella del acta</label>
+    <input id="v_hash" placeholder="Pegá aquí los 64 caracteres">
+    <div class="row"><button class="btn" id="btnVerificar">Verificar</button></div>
+    <div id="v_res"></div>
+  </div>
+</section>
+
+<!-- ===================== REGISTRO ===================== -->
+<section id="tab-registro" class="hidden">
+  <div class="card">
+    <h2>Registro probatorio encadenado</h2>
+    <p class="sub">Cada evento incluye la huella del evento anterior: si se altera o elimina un registro, la cadena deja de validar.</p>
+    <div class="row" style="margin-top:0"><button class="btn sec sm" id="btnValidarCadena">Validar integridad de la cadena</button></div>
+    <div id="cadenaRes"></div>
+    <div style="overflow-x:auto;margin-top:10px">
+      <table><thead><tr><th>Fecha y hora</th><th>Evento</th><th>Detalle</th><th>Huella</th></tr></thead><tbody id="logtabla"></tbody></table>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- Modal de la parte -->
+<div class="modal hidden" id="modal">
+  <div class="box">
+    <div class="bh"><strong>Conformidad del acta</strong><button class="btn sm sec" id="btnCerrarModal">Cerrar</button></div>
+    <div class="bb" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============ Utilidades ============ */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ahora = () => new Date().toISOString();
+const fmt = (iso) => new Date(iso).toLocaleString("es-AR", {timeZone:"America/Buenos_Aires", dateStyle:"short", timeStyle:"medium"});
+const corto = (h) => h ? h.slice(0,12) + "…" : "";
+async function sha256(txt){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+function aleatorio(n){ const a = new Uint8Array(n); crypto.getRandomValues(a); return [...a].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+function otp(){ const a = new Uint32Array(1); crypto.getRandomValues(a); return String(a[0] % 1000000).padStart(6,"0"); }
+function ipSimulada(){ const a = new Uint8Array(2); crypto.getRandomValues(a); return "10.20." + a[0] + "." + a[1]; }
+
+/* ============ Estado ============ */
+const ROLES = ["Requirente","Requerido/a","Letrado/a requirente","Letrado/a requerido/a","Defensor/a","Otro"];
+let acta = null;         // acta bloqueada
+let log = [];            // registro encadenado
+let correos = [];        // bandeja simulada
+let parteActiva = null;  // índice de parte en el modal
+const STORE = "firma-actas-demo-v1";
+
+function guardar(){ try{ localStorage.setItem(STORE, JSON.stringify({acta, log, correos})); }catch(e){} }
+function cargar(){
+  try{ const d = JSON.parse(localStorage.getItem(STORE) || "null"); if(d){ acta = d.acta; log = d.log || []; correos = d.correos || []; } }catch(e){}
+}
+
+async function registrar(evento, detalle){
+  const prev = log.length ? log[log.length-1].huella : "0".repeat(64);
+  const e = {fecha: ahora(), evento, detalle, prev};
+  e.huella = await sha256(JSON.stringify([e.fecha, e.evento, e.detalle, e.prev]));
+  log.push(e); guardar(); renderLog();
+}
+
+/* ============ Pestañas ============ */
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => irA(b.dataset.tab)));
+function irA(tab){
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("act", x.dataset.tab === tab));
+  ["circuito","bandeja","verificar","registro"].forEach(t => $("tab-"+t).classList.toggle("hidden", t !== tab));
+}
+
+/* ============ Paso 1: partes ============ */
+function filaParte(p = {}){
+  const div = document.createElement("div");
+  div.className = "party";
+  div.innerHTML = `
+    <div class="party-h"><strong>Parte</strong><button class="btn link sm" type="button">Quitar</button></div>
+    <div class="grid">
+      <div><label>Rol</label><select class="p_rol">${ROLES.map(r=>`<option ${r===p.rol?"selected":""}>${r}</option>`).join("")}</select></div>
+      <div><label>Nombre y apellido</label><input class="p_nombre" value="${esc(p.nombre)}"></div>
+      <div><label>DNI</label><input class="p_dni" value="${esc(p.dni)}"></div>
+      <div><label>Correo constituido</label><input class="p_email" type="email" value="${esc(p.email)}"></div>
+      <div><label>Teléfono (código)</label><input class="p_tel" value="${esc(p.tel)}"></div>
+    </div>`;
+  div.querySelector(".btn.link").addEventListener("click", () => { if($("partes").children.length > 2) div.remove(); });
+  $("partes").appendChild(div);
+}
+$("btnAddParte").addEventListener("click", () => filaParte());
+
+$("btnEjemplo").addEventListener("click", () => {
+  $("f_numero").value = "MED-0123/2026";
+  $("f_cuij").value = "J-99-00000001-0/2026-0";
+  $("f_tipo").value = "Acta de acuerdo";
+  $("f_mediador").value = "Mediadora Ejemplo Uno";
+  $("f_fecha").value = new Date().toISOString().slice(0,10);
+  $("partes").innerHTML = "";
+  filaParte({rol:"Requirente", nombre:"Persona Ficticia A", dni:"00.000.001", email:"parte.a@ejemplo.test", tel:"11-0000-0001"});
+  filaParte({rol:"Requerido/a", nombre:"Persona Ficticia B", dni:"00.000.002", email:"parte.b@ejemplo.test", tel:"11-0000-0002"});
+  $("f_texto").value =
+"En la Ciudad Autónoma de Buenos Aires, en la fecha indicada, se celebra en modalidad virtual la audiencia de mediación del legajo de referencia, con la presencia de las partes individualizadas.\n\n" +
+"Luego del diálogo mantenido, las partes arriban al siguiente acuerdo:\n\n" +
+"PRIMERO: Las partes se comprometen a mantener un trato respetuoso en el ámbito vecinal.\n" +
+"SEGUNDO: La parte requerida se compromete a reparar el cerco medianero dentro de los treinta (30) días.\n" +
+"TERCERO: Las partes acuerdan comunicarse exclusivamente por mensajería escrita para cuestiones vinculadas al presente.\n\n" +
+"Leída el acta en la audiencia, las partes manifiestan su conformidad. Se deja constancia del carácter confidencial del proceso.";
+});
+
+function leerForm(){
+  const partes = [...$("partes").children].map(d => ({
+    rol: d.querySelector(".p_rol").value,
+    nombre: d.querySelector(".p_nombre").value.trim(),
+    dni: d.querySelector(".p_dni").value.trim(),
+    email: d.querySelector(".p_email").value.trim(),
+    tel: d.querySelector(".p_tel").value.trim()
+  }));
+  return {
+    numero: $("f_numero").value.trim(), cuij: $("f_cuij").value.trim(), tipo: $("f_tipo").value,
+    mediador: $("f_mediador").value.trim(), fecha: $("f_fecha").value, modalidad: $("f_modalidad").value,
+    partes, texto: $("f_texto").value.trim()
+  };
+}
+
+$("btnBloquear").addEventListener("click", async () => {
+  const f = leerForm(); const err = [];
+  if(!f.numero) err.push("Falta el número de legajo.");
+  if(!f.mediador) err.push("Falta el/la mediador/a.");
+  if(!f.fecha) err.push("Falta la fecha.");
+  if(f.texto.length < 20) err.push("El texto del acta es demasiado breve.");
+  f.partes.forEach((p,i) => {
+    if(!p.nombre || !p.email || !p.tel) err.push(`Parte ${i+1}: nombre, correo y teléfono son obligatorios.`);
+    else if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email)) err.push(`Parte ${i+1}: correo inválido.`);
+  });
+  if(!$("f_lectura").checked) err.push("Debe dejarse constancia de la lectura y la conformidad verbal en audiencia.");
+  if(err.length){ $("p1err").innerHTML = err.map(esc).join("<br>"); $("p1err").classList.remove("hidden"); return; }
+  $("p1err").classList.add("hidden");
+
+  // Contenido canónico: lo único que se firma
+  const contenido = {numero:f.numero, cuij:f.cuij, tipo:f.tipo, mediador:f.mediador, fecha:f.fecha, modalidad:f.modalidad,
+    partes:f.partes.map(p => ({rol:p.rol, nombre:p.nombre, dni:p.dni, email:p.email})), texto:f.texto};
+  const canon = JSON.stringify(contenido);
+  const hash = await sha256(canon);
+
+  log = []; correos = [];
+  acta = {
+    contenido, canon, hash, bloqueada: ahora(),
+    partes: f.partes.map(p => ({...p, token: aleatorio(16), estado:"pendiente", otp:null, otpVence:null, conformidad:null, intentos:0})),
+    firma: null
+  };
+  await registrar("Acta bloqueada", `Legajo ${f.numero}. Huella ${hash}. Constancia de lectura en audiencia: sí.`);
+  render();
+});
+
+/* ============ Paso 2: envío y conformidad ============ */
+async function enviarEnlace(i){
+  const p = acta.partes[i];
+  if(p.estado === "conforme") return;
+  p.estado = "enviado";
+  correos.unshift({i, fecha: ahora(), para: p.email,
+    asunto: `Acta ${acta.contenido.numero} — conformidad requerida`, token: p.token});
+  await registrar("Enlace enviado", `${p.rol} ${p.nombre} → ${p.email} (token ${corto(p.token)})`);
+  render(); renderBandeja();
+}
+$("btnEnviarTodos").addEventListener("click", async () => {
+  for(let i=0;i<acta.partes.length;i++) if(acta.partes[i].estado === "pendiente") await enviarEnlace(i);
+});
+
+function abrirParte(i){
+  parteActiva = i; const p = acta.partes[i];
+  const c = acta.contenido;
+  let html = `
+    <p style="margin-top:0"><b>${esc(p.nombre)}</b> — ${esc(p.rol)}<br><span class="sub">Legajo ${esc(c.numero)} · ${esc(c.tipo)} · Audiencia del ${esc(c.fecha)}</span></p>
+    <label>Texto del acta</label><div class="actatext">${esc(c.texto)}</div>
+    <label>Huella del documento (SHA-256)</label><div class="hash">${acta.hash}</div>`;
+  if(p.estado === "conforme"){
+    html += `<div class="okbox">Ya prestó conformidad el ${fmt(p.conformidad.fecha)}.</div>`;
+  } else if(acta.firma){
+    html += `<div class="errbox">El acta ya fue cerrada.</div>`;
+  } else {
+    html += `
+      <div class="row"><button class="btn sec sm" id="mEnviarOtp">Enviarme el código a ${esc(p.tel)}</button></div>
+      <div id="mSms"></div>
+      <label>Código recibido</label><input id="mOtp" inputmode="numeric" maxlength="6" placeholder="6 dígitos">
+      <div class="check"><input type="checkbox" id="mDecl"><span>Declaro que participé de la audiencia, que el texto que leo es el que se leyó en ella y que presto mi conformidad con su contenido.</span></div>
+      <div id="mErr"></div>
+      <div class="row"><button class="btn ok" id="mConformar">Prestar conformidad</button></div>`;
+  }
+  $("modalBody").innerHTML = html;
+  $("modal").classList.remove("hidden");
+  registrar("Enlace abierto", `${p.rol} ${p.nombre} accedió al acta (token ${corto(p.token)})`);
+
+  const bOtp = $("mEnviarOtp");
+  if(bOtp) bOtp.addEventListener("click", async () => {
+    p.otp = otp(); p.otpVence = Date.now() + 10*60*1000; p.intentos = 0; guardar();
+    $("mSms").innerHTML = `<div class="sms">📱 SMS simulado a ${esc(p.tel)}: <b>Su código para el acta ${esc(acta.contenido.numero)} es ${p.otp}</b>. Vence en 10 minutos.</div>`;
+    await registrar("Código enviado", `${p.rol} ${p.nombre} → ${p.tel}`);
+  });
+  const bConf = $("mConformar");
+  if(bConf) bConf.addEventListener("click", async () => {
+    const e = [];
+    if(!p.otp) e.push("Primero solicitá el código.");
+    else if(Date.now() > p.otpVence) e.push("El código venció. Solicitá uno nuevo.");
+    else if($("mOtp").value.trim() !== p.otp){ p.intentos++; e.push(`Código incorrecto (intento ${p.intentos} de 3).`); if(p.intentos >= 3){ p.otp = null; e.push("Se anuló el código. Solicitá uno nuevo."); } }
+    if(!$("mDecl").checked) e.push("Debés marcar la declaración.");
+    if(e.length){ $("mErr").innerHTML = `<div class="errbox">${e.map(esc).join("<br>")}</div>`; guardar();
+      if(e.some(x=>x.startsWith("Código incorrecto"))) await registrar("Código rechazado", `${p.rol} ${p.nombre}, intento ${p.intentos}`);
+      return; }
+    // Se vuelve a calcular la huella para comprobar que el texto no cambió
+    const verif = await sha256(acta.canon);
+    if(verif !== acta.hash){ $("mErr").innerHTML = `<div class="errbox">El documento fue alterado. No se puede prestar conformidad.</div>`; return; }
+    p.estado = "conforme"; p.otp = null;
+    p.conformidad = {fecha: ahora(), ip: ipSimulada(), dispositivo: navigator.userAgent.slice(0,90), hashAceptado: acta.hash};
+    await registrar("Conformidad prestada", `${p.rol} ${p.nombre}. Huella aceptada ${acta.hash}. IP ${p.conformidad.ip}. Validación por código: sí.`);
+    abrirParte(i); render(); renderBandeja();
+  });
+}
+$("btnCerrarModal").addEventListener("click", () => $("modal").classList.add("hidden"));
+
+/* ============ Paso 3: firma ============ */
+$("btnFirmar").addEventListener("click", async () => {
+  if(!acta || acta.partes.some(p => p.estado !== "conforme")) return;
+  const verif = await sha256(acta.canon);
+  if(verif !== acta.hash){ alert("La huella no coincide: el acta fue alterada."); return; }
+  acta.firma = {fecha: ahora(), firmante: acta.contenido.mediador, serie: aleatorio(8).toUpperCase(),
+    hashFinal: await sha256(acta.hash + JSON.stringify(acta.partes.map(p => p.conformidad)))};
+  await registrar("Firma digital del mediador/a", `${acta.firma.firmante}. Certificado (simulado) N.º ${acta.firma.serie}. Huella final ${acta.firma.hashFinal}`);
+  render();
+});
+
+$("btnNueva").addEventListener("click", () => {
+  if(!confirm("¿Descartar el acta actual y comenzar una nueva?")) return;
+  acta = null; log = []; correos = []; guardar();
+  $("f_texto").value = ""; $("f_lectura").checked = false;
+  $("partes").innerHTML = ""; filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"});
+  [ "f_numero","f_cuij","f_mediador" ].forEach(id => $(id).value = "");
+  render(); renderBandeja(); renderLog();
+});
+
+/* ============ Render ============ */
+function bloquearForm(si){
+  document.querySelectorAll("#p1 input, #p1 select, #p1 textarea, #p1 button").forEach(el => el.disabled = si);
+}
+function render(){
+  const paso = !acta ? 1 : acta.firma ? 4 : acta.partes.every(p => p.estado === "conforme") ? 3 : 2;
+  document.querySelectorAll(".step").forEach(s => {
+    const n = +s.dataset.s; s.classList.toggle("cur", n === paso); s.classList.toggle("done", n < paso);
+  });
+  bloquearForm(!!acta);
+  $("p2").classList.toggle("hidden", !acta);
+  $("p3").classList.toggle("hidden", !acta);
+  $("p4").classList.toggle("hidden", !(acta && acta.firma));
+  if(!acta) return;
+
+  $("p2hash").textContent = acta.hash;
+  $("p2tabla").innerHTML = acta.partes.map((p,i) => {
+    const pill = p.estado === "conforme" ? `<span class="pill ok">Conforme · ${fmt(p.conformidad.fecha)}</span>`
+      : p.estado === "enviado" ? `<span class="pill sent">Enlace enviado</span>` : `<span class="pill pend">Pendiente</span>`;
+    const btn = p.estado === "conforme" || acta.firma ? "" : `<button class="btn sec sm" data-env="${i}">${p.estado === "enviado" ? "Reenviar" : "Enviar enlace"}</button>`;
+    return `<tr><td><b>${esc(p.nombre)}</b><br><span class="sub">${esc(p.rol)}</span></td><td>${esc(p.email)}</td><td>${pill}</td><td>${btn}</td></tr>`;
+  }).join("");
+  document.querySelectorAll("[data-env]").forEach(b => b.addEventListener("click", () => enviarEnlace(+b.dataset.env)));
+  $("btnEnviarTodos").disabled = !!acta.firma || acta.partes.every(p => p.estado !== "pendiente");
+
+  const faltan = acta.partes.filter(p => p.estado !== "conforme").length;
+  $("p3estado").innerHTML = acta.firma
+    ? `<div class="okbox">Acta firmada digitalmente el ${fmt(acta.firma.fecha)}.</div>`
+    : faltan ? `<div class="note">Faltan ${faltan} conformidad(es) para habilitar la firma.</div>`
+    : `<div class="okbox">Todas las partes prestaron conformidad. Se puede firmar.</div>`;
+  $("btnFirmar").disabled = !!acta.firma || faltan > 0;
+
+  if(acta.firma) renderDoc();
+}
+
+function renderDoc(){
+  const c = acta.contenido, f = acta.firma;
+  const urlVerif = location.href.split("#")[0] + "#verificar=" + acta.hash;
+  $("doc").innerHTML = `
+    <h3>${esc(c.tipo.toUpperCase())}</h3>
+    <div class="org">Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos<br>Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires</div>
+    <table>
+      <tr><th style="width:30%">Legajo</th><td>${esc(c.numero)}</td></tr>
+      <tr><th>CUIJ</th><td>${esc(c.cuij || "—")}</td></tr>
+      <tr><th>Fecha de audiencia</th><td>${esc(c.fecha)}</td></tr>
+      <tr><th>Modalidad</th><td>${esc(c.modalidad)}</td></tr>
+      <tr><th>Mediador/a</th><td>${esc(c.mediador)}</td></tr>
+    </table>
+    <div class="cuerpo">${esc(c.texto)}</div>
+    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Conformidades electrónicas</b> (validadas por enlace al correo constituido y código al teléfono declarado):</p>
+    <table>
+      <thead><tr><th>Parte</th><th>DNI</th><th>Fecha y hora</th><th>IP</th></tr></thead>
+      <tbody>${acta.partes.map(p => `<tr><td>${esc(p.nombre)}<br><span style="color:#666">${esc(p.rol)}</span></td><td>${esc(p.dni || "—")}</td><td>${fmt(p.conformidad.fecha)}</td><td>${esc(p.conformidad.ip)}</td></tr>`).join("")}</tbody>
+    </table>
+    <div class="firma">
+      <div id="qr"></div>
+      <div>
+        <b>Firmado digitalmente por:</b> ${esc(f.firmante)} — Mediador/a<br>
+        <b>Fecha:</b> ${fmt(f.fecha)}<br>
+        <b>Certificado (simulado) N.º:</b> ${f.serie}<br>
+        <b>Huella del texto:</b><div class="hash" style="margin:3px 0">${acta.hash}</div>
+        <b>Huella final (texto + conformidades):</b><div class="hash" style="margin-top:3px">${f.hashFinal}</div>
+      </div>
+    </div>
+    <div class="wm">Documento generado por un prototipo demostrativo con datos ficticios. Sin validez jurídica.</div>`;
+  if(window.QRCode){ new QRCode($("qr"), {text: urlVerif, width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M}); }
+  else { $("qr").innerHTML = '<div class="hash" style="width:110px">QR no disponible sin conexión</div>'; }
+}
+
+function renderBandeja(){
+  if(!correos.length){ $("bandeja").innerHTML = '<p class="sub">Todavía no se enviaron enlaces.</p>'; return; }
+  $("bandeja").innerHTML = correos.map(m => {
+    const p = acta && acta.partes[m.i];
+    const vigente = p && p.token === m.token;
+    return `<div class="mail">
+      <div class="meta">De: mediacion@ejemplo.test · Para: ${esc(m.para)} · ${fmt(m.fecha)}</div>
+      <div style="margin:4px 0"><b>${esc(m.asunto)}</b></div>
+      <div style="font-size:14px">Se le solicita revisar el acta de la audiencia de mediación y, si corresponde, prestar su conformidad. El enlace es personal e intransferible.</div>
+      <div class="row" style="margin-top:8px">${vigente ? `<button class="btn sm" data-abrir="${m.i}">Abrir enlace</button>` : `<span class="sub">Enlace no vigente</span>`}
+      ${p && p.estado === "conforme" ? '<span class="pill ok">Conformidad prestada</span>' : ""}</div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll("[data-abrir]").forEach(b => b.addEventListener("click", () => abrirParte(+b.dataset.abrir)));
+}
+
+function renderLog(){
+  $("logtabla").innerHTML = log.length ? log.slice().reverse().map(e =>
+    `<tr><td style="white-space:nowrap">${fmt(e.fecha)}</td><td><b>${esc(e.evento)}</b></td><td>${esc(e.detalle)}</td><td><span class="hash" title="${e.huella}">${corto(e.huella)}</span></td></tr>`).join("")
+    : `<tr><td colspan="4" class="sub">Sin eventos registrados.</td></tr>`;
+}
+
+$("btnValidarCadena").addEventListener("click", async () => {
+  let prev = "0".repeat(64), ok = true, falla = -1;
+  for(let i=0;i<log.length;i++){
+    const e = log[i];
+    const h = await sha256(JSON.stringify([e.fecha, e.evento, e.detalle, e.prev]));
+    if(e.prev !== prev || h !== e.huella){ ok = false; falla = i; break; }
+    prev = e.huella;
+  }
+  $("cadenaRes").innerHTML = !log.length ? '<div class="note">No hay eventos.</div>'
+    : ok ? `<div class="okbox">Cadena íntegra: ${log.length} eventos verificados.</div>`
+    : `<div class="errbox">La cadena se rompe en el evento ${falla+1}: el registro fue alterado.</div>`;
+});
+
+/* ============ Verificación ============ */
+async function verificar(h){
+  h = (h || "").trim().toLowerCase();
+  if(!/^[0-9a-f]{64}$/.test(h)){ $("v_res").innerHTML = '<div class="errbox">La huella debe tener 64 caracteres hexadecimales.</div>'; return; }
+  if(!acta || acta.hash !== h){ $("v_res").innerHTML = '<div class="errbox">No se encontró un acta con esa huella en este sistema.</div>'; return; }
+  const recalculo = await sha256(acta.canon);
+  const integro = recalculo === h;
+  const c = acta.contenido;
+  $("v_res").innerHTML = `<div class="${integro ? "okbox" : "errbox"}">${integro ? "Acta auténtica e íntegra." : "El contenido almacenado no coincide con la huella."}</div>
+    <table style="margin-top:10px">
+      <tr><th style="width:35%">Legajo</th><td>${esc(c.numero)}</td></tr>
+      <tr><th>Tipo</th><td>${esc(c.tipo)}</td></tr>
+      <tr><th>Fecha de audiencia</th><td>${esc(c.fecha)}</td></tr>
+      <tr><th>Conformidades</th><td>${acta.partes.filter(p=>p.estado==="conforme").length} de ${acta.partes.length}</td></tr>
+      <tr><th>Firma del mediador/a</th><td>${acta.firma ? "Firmada el " + fmt(acta.firma.fecha) : "Pendiente"}</td></tr>
+    </table>
+    <p class="sub" style="margin-top:8px">Por confidencialidad, la verificación no muestra el texto del acta.</p>`;
+}
+$("btnVerificar").addEventListener("click", () => verificar($("v_hash").value));
+
+/* ============ Inicio ============ */
+cargar();
+if(acta){
+  const c = acta.contenido;
+  $("f_numero").value = c.numero; $("f_cuij").value = c.cuij; $("f_tipo").value = c.tipo; $("f_mediador").value = c.mediador;
+  $("f_fecha").value = c.fecha; $("f_modalidad").value = c.modalidad; $("f_texto").value = c.texto; $("f_lectura").checked = true;
+  acta.partes.forEach(p => filaParte(p));
+} else { filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"}); }
+render(); renderBandeja(); renderLog();
+const m = location.hash.match(/verificar=([0-9a-f]{64})/i);
+if(m){ irA("verificar"); $("v_hash").value = m[1]; verificar(m[1]); }
+</script>
+</body>
+</html>
