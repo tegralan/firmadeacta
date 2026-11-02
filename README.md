@@ -15,6 +15,10 @@ Prototipo demostrativo del circuito de firma remota de actas de audiencias de me
 
 Además, la página incluye una verificación de autenticidad por huella y un registro probatorio encadenado.
 
+## Varias actas
+
+La barra *Mis actas* permite crear actas nuevas, pasar de una a otra y eliminarlas. Cada mediador/a ve las actas guardadas en su propio navegador. *Volver a editar* desbloquea un acta mientras no se haya enviado a ninguna parte, y un acta en modo simulado puede pasarse a correo real (se descartan los envíos simulados).
+
 ## Alcance
 
 Todo funciona en el navegador, sin servidor. En modo simulado, el correo, el SMS y la IP son simulados; la firma digital del/la mediador/a es simulada en ambos modos. El estado se guarda en el `localStorage` del navegador.

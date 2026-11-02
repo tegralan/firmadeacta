@@ -111,6 +111,14 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
 <main>
 <!-- ===================== CIRCUITO ===================== -->
 <section id="tab-circuito">
+  <div class="card noprint" style="padding:12px 18px">
+    <div class="row" style="margin-top:0;align-items:flex-end">
+      <div style="flex:1;min-width:240px"><label style="margin-top:0">Mis actas (guardadas en este navegador)</label><select id="selActas"></select></div>
+      <button class="btn sm" id="btnNuevaTop">+ Nueva acta</button>
+      <button class="btn sec sm" id="btnEliminar">Eliminar acta</button>
+    </div>
+    <div id="espacio"></div>
+  </div>
   <div class="steps noprint" id="steps">
     <div class="step" data-s="1"><b>Paso 1</b>Redacción y bloqueo</div>
     <div class="step" data-s="2"><b>Paso 2</b>Conformidad de las partes</div>
@@ -153,7 +161,7 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
 
     <div class="check" id="w_lectura"><input type="checkbox" id="f_lectura"><span>Dejo constancia de que el acta fue leída en la audiencia virtual y de que cada parte manifestó verbalmente su conformidad.</span></div>
     <div id="p1err" class="errbox hidden"></div>
-    <div class="row"><button class="btn" id="btnBloquear">Bloquear texto y generar acta</button></div>
+    <div class="row"><button class="btn" id="btnBloquear">Bloquear texto y generar acta</button><button class="btn sec hidden" id="btnEditar">Volver a editar</button></div>
   </div>
 
   <!-- Paso 2 -->
@@ -161,8 +169,8 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
     <h2>2. Conformidad electrónica de las partes</h2>
     <label>Modo de envío</label>
     <div class="seg">
-      <label class="opt"><input type="radio" name="modo" value="sim" checked> Simulado (demostración)</label>
-      <label class="opt"><input type="radio" name="modo" value="real"> Correo real desde Microsoft 365</label>
+      <label class="opt"><input type="radio" name="modo" value="sim"> Simulado (demostración)</label>
+      <label class="opt"><input type="radio" name="modo" value="real" checked> Correo real desde Microsoft 365</label>
     </div>
     <p class="sub" id="p2desc"></p>
     <div><label>Huella del acta (SHA-256)</label><div class="hash" id="p2hash"></div></div>
@@ -293,11 +301,35 @@ let log = [];            // registro encadenado
 let correos = [];        // bandeja simulada
 let parteActiva = null;  // índice de parte en el modal
 let archivoCargado = null; // {nombre, tipo, tamano, sha256, dataUrl}
-const STORE = "firma-actas-demo-v2";
+const STORE = "firma-actas-demo-v3";
+let coleccion = [];      // [{id, creado, mod, acta, log, correos}]
+let activaId = null;
 
-function guardar(){ try{ localStorage.setItem(STORE, JSON.stringify({acta, log, correos})); }catch(e){} }
+function guardar(){
+  if(acta && activaId){
+    const e = coleccion.find(x => x.id === activaId);
+    if(e){ e.acta = acta; e.log = log; e.correos = correos; e.mod = ahora(); }
+  }
+  let ok = true;
+  try{ localStorage.setItem(STORE, JSON.stringify({coleccion, activaId})); }catch(e){ ok = false; }
+  const el = document.getElementById("espacio");
+  if(el) el.innerHTML = ok ? "" : '<div class="errbox">El navegador se quedó sin espacio para guardar actas (suele ocurrir con archivos adjuntos grandes). Eliminá actas ya firmadas para liberar espacio.</div>';
+  if(typeof renderLista === "function") renderLista();
+}
 function cargar(){
-  try{ const d = JSON.parse(localStorage.getItem(STORE) || "null"); if(d){ acta = d.acta; log = d.log || []; correos = d.correos || []; } }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(STORE) || "null"); if(d){ coleccion = d.coleccion || []; activaId = d.activaId || null; } }catch(e){}
+  // Migración desde la versión anterior (una sola acta)
+  try{
+    const v2 = JSON.parse(localStorage.getItem("firma-actas-demo-v2") || "null");
+    if(v2 && v2.acta && !coleccion.some(x => x.acta && x.acta.hash === v2.acta.hash)){
+      const id = aleatorio(6);
+      coleccion.unshift({id, creado: v2.acta.bloqueada || ahora(), acta: v2.acta, log: v2.log || [], correos: v2.correos || []});
+      if(!activaId) activaId = id;
+    }
+    localStorage.removeItem("firma-actas-demo-v2");
+  }catch(e){}
+  const e = coleccion.find(x => x.id === activaId);
+  if(e){ acta = e.acta; log = e.log || []; correos = e.correos || []; } else activaId = null;
 }
 
 async function registrar(evento, detalle){
@@ -425,12 +457,12 @@ function leerForm(){
 }
 
 /* Comprueba que ni el texto/metadatos ni el archivo hayan cambiado desde el bloqueo */
-async function integridadOk(){
-  if((await sha256(acta.canon)) !== acta.hash) return false;
-  if(acta.contenido.archivo){
-    if(!acta.archivoData) return false;
-    const h = await sha256Bytes(await dataUrlToBlob(acta.archivoData).arrayBuffer());
-    if(h !== acta.contenido.archivo.sha256) return false;
+async function integridadOk(a = acta){
+  if((await sha256(a.canon)) !== a.hash) return false;
+  if(a.contenido.archivo){
+    if(!a.archivoData) return false;
+    const h = await sha256Bytes(await dataUrlToBlob(a.archivoData).arrayBuffer());
+    if(h !== a.contenido.archivo.sha256) return false;
   }
   return true;
 }
@@ -463,6 +495,8 @@ $("btnBloquear").addEventListener("click", async () => {
   const hash = await sha256(canon);
 
   log = []; correos = [];
+  activaId = aleatorio(6);
+  coleccion.unshift({id: activaId, creado: ahora()});
   acta = {
     contenido, canon, hash, bloqueada: ahora(),
     archivoData: f.fuente === "archivo" ? archivoCargado.dataUrl : null,
@@ -676,14 +710,23 @@ async function registrarManual(i){
   render();
 }
 
-document.querySelectorAll('input[name="modo"]').forEach(r => r.addEventListener("change", () => {
+document.querySelectorAll('input[name="modo"]').forEach(r => r.addEventListener("change", async () => {
   if(!acta) return;
-  if(acta.partes.some(p => p.estado !== "pendiente")){
-    document.querySelector(`input[name="modo"][value="${modoActual()}"]`).checked = true;
-    msgP2("errbox", "No se puede cambiar el modo después de haber enviado a alguna parte.");
+  const huboEnvios = acta.partes.some(p => p.estado !== "pendiente");
+  if(huboEnvios && acta.modo === "real"){
+    document.querySelector('input[name="modo"][value="real"]').checked = true;
+    msgP2("errbox", "Ya se enviaron correos reales: no se puede volver al modo simulado. Para una demostración, creá una nueva acta.");
     return;
   }
-  acta.modo = r.value; guardar(); msgP2("", ""); render();
+  if(huboEnvios && acta.modo === "sim" && r.value === "real"){
+    if(!confirm("Se descartarán los envíos y conformidades simulados de esta acta para enviarla por correo real. ¿Continuar?")){
+      document.querySelector('input[name="modo"][value="sim"]').checked = true; return;
+    }
+    acta.partes.forEach(p => { p.estado = "pendiente"; p.conformidad = null; p.otp = null; p.intentos = 0; p.codigo = null; p.envioReal = null; });
+    correos = [];
+    await registrar("Cambio de modo", "Se descartaron los envíos simulados y se pasó a correo real (Microsoft 365).");
+  }
+  acta.modo = r.value; guardar(); msgP2("", ""); render(); renderBandeja();
 }));
 
 function abrirParte(i){
@@ -748,17 +791,77 @@ $("btnFirmar").addEventListener("click", async () => {
   render();
 });
 
-$("btnNueva").addEventListener("click", () => {
-  if(!confirm("¿Descartar el acta actual y comenzar una nueva?")) return;
-  acta = null; log = []; correos = []; guardar();
+function limpiarForm(){
+  ["f_numero","f_cuij","f_mediador","f_plat_otra","f_fecha"].forEach(id => $(id).value = "");
+  $("f_tipo").selectedIndex = 0; $("f_plataforma").selectedIndex = 0; $("w_otra").classList.add("hidden");
   $("f_texto").value = ""; $("f_lectura").checked = false;
-  document.querySelectorAll('input[name="modo"]').forEach(r => { r.disabled = false; r.checked = r.value === "sim"; });
-  msgP2("", "");
   archivoCargado = null; $("f_archivo").value = ""; $("arch_info").innerHTML = ""; $("arch_prev").innerHTML = "";
   document.querySelector('input[name="fuente"][value="texto"]').checked = true; mostrarFuente();
   $("partes").innerHTML = ""; filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"});
-  [ "f_numero","f_cuij","f_mediador" ].forEach(id => $(id).value = "");
-  render(); renderBandeja(); renderLog();
+  document.querySelectorAll('input[name="modo"]').forEach(r => { r.disabled = false; r.checked = r.value === "real"; });
+  msgP2("", ""); $("cadenaRes").innerHTML = "";
+  notaResultado();
+}
+function formDesdeActa(){
+  limpiarForm();
+  if(!acta) return;
+  const c = acta.contenido;
+  $("f_numero").value = c.numero; $("f_cuij").value = c.cuij; $("f_tipo").value = c.tipo; $("f_mediador").value = c.mediador;
+  $("f_fecha").value = c.fecha; $("f_texto").value = c.texto; $("f_lectura").checked = true;
+  if(acta.form){ $("f_plataforma").value = acta.form.plataformaSel; $("f_plat_otra").value = acta.form.plataformaOtra || "";
+    $("w_otra").classList.toggle("hidden", acta.form.plataformaSel !== "Otra"); }
+  if(c.archivo){
+    document.querySelector('input[name="fuente"][value="archivo"]').checked = true;
+    archivoCargado = {...c.archivo, dataUrl: acta.archivoData};
+    $("arch_info").innerHTML = `<div class="okbox">${esc(c.archivo.nombre)} · ${kb(c.archivo.tamano)}</div>`;
+    previewArchivo(archivoCargado, $("arch_prev"));
+  }
+  mostrarFuente();
+  $("partes").innerHTML = ""; acta.partes.forEach(p => filaParte(p));
+  notaResultado();
+}
+function refrescarTodo(){ formDesdeActa(); render(); renderBandeja(); renderLog(); renderLista(); }
+function nuevaActa(){
+  guardar();
+  acta = null; log = []; correos = []; activaId = null;
+  guardar(); refrescarTodo(); irA("circuito"); window.scrollTo(0, 0);
+}
+function abrirActa(id){
+  guardar();
+  const e = coleccion.find(x => x.id === id); if(!e) return;
+  activaId = id; acta = e.acta; log = e.log || []; correos = e.correos || [];
+  guardar(); refrescarTodo();
+}
+function estadoActa(a){
+  if(a.firma) return "Firmada";
+  if(!a.requiereConf) return "Lista para firmar";
+  const ok = a.partes.filter(p => p.estado === "conforme").length;
+  return `Conformidades ${ok}/${a.partes.length}`;
+}
+function renderLista(){
+  const sel = $("selActas");
+  const opts = coleccion.filter(e => e.acta).map(e =>
+    `<option value="${e.id}" ${e.id === activaId ? "selected" : ""}>${esc(e.acta.contenido.numero)} · ${esc(e.acta.contenido.fecha)} · ${esc(estadoActa(e.acta))}</option>`);
+  sel.innerHTML = (activaId ? "" : '<option value="" selected>— Acta nueva en redacción —</option>') + opts.join("");
+  $("btnEliminar").disabled = !activaId;
+}
+$("selActas").addEventListener("change", () => { const v = $("selActas").value; if(v) abrirActa(v); else nuevaActa(); });
+$("btnNuevaTop").addEventListener("click", nuevaActa);
+$("btnNueva").addEventListener("click", nuevaActa);
+$("btnEliminar").addEventListener("click", () => {
+  if(!activaId) return;
+  const n = acta ? acta.contenido.numero : "";
+  if(!confirm(`¿Eliminar definitivamente el acta ${n} de este navegador?`)) return;
+  coleccion = coleccion.filter(x => x.id !== activaId);
+  acta = null; log = []; correos = []; activaId = null;
+  guardar(); refrescarTodo();
+});
+$("btnEditar").addEventListener("click", () => {
+  if(!acta || acta.partes.some(p => p.estado !== "pendiente" && p.estado !== "no-requerida") || acta.firma) return;
+  // Nada se envió todavía: se descarta la versión bloqueada y se conserva lo cargado en el formulario
+  coleccion = coleccion.filter(x => x.id !== activaId);
+  acta = null; log = []; correos = []; activaId = null;
+  guardar(); render(); renderBandeja(); renderLog(); renderLista();
 });
 
 /* ============ Render ============ */
@@ -773,6 +876,8 @@ function render(){
     const n = +s.dataset.s; s.classList.toggle("cur", n === paso); s.classList.toggle("done", n < paso);
   });
   bloquearForm(!!acta);
+  const puedeEditar = acta && !acta.firma && acta.partes.every(p => p.estado === "pendiente" || p.estado === "no-requerida");
+  $("btnEditar").classList.toggle("hidden", !puedeEditar); $("btnEditar").disabled = false;
   const s2 = document.querySelector('.step[data-s="2"]');
   s2.innerHTML = acta && !conf ? "<b>Paso 2</b>No requerida (audiencia no realizada)" : "<b>Paso 2</b>Conformidad de las partes";
   $("p2").classList.toggle("hidden", !acta || !conf);
@@ -784,7 +889,7 @@ function render(){
   const real = modoActual() === "real";
   const enviado = acta.partes.some(p => p.estado !== "pendiente");
   document.querySelector(`input[name="modo"][value="${real ? "real" : "sim"}"]`).checked = true;
-  document.querySelectorAll('input[name="modo"]').forEach(r => r.disabled = enviado);
+  document.querySelectorAll('input[name="modo"]').forEach(r => r.disabled = enviado && acta.modo === "real");
   $("p2desc").innerHTML = real
     ? "Cada parte recibe el acta en su correo constituido, enviada <b>desde tu casilla institucional</b> (Microsoft 365), con un código personal. Para prestar conformidad debe responder desde esa misma casilla con la frase <b>PRESTO CONFORMIDAD</b> y su código. Después usá <b>Buscar respuestas en mi bandeja</b>."
     : "Cada parte recibe un enlace único y valida un código por SMS. Ambos se simulan dentro de la página: abrí la pestaña <b>Bandeja simulada</b> para actuar como cada parte.";
@@ -905,17 +1010,19 @@ $("btnValidarCadena").addEventListener("click", async () => {
 async function verificar(h){
   h = (h || "").trim().toLowerCase();
   if(!/^[0-9a-f]{64}$/.test(h)){ $("v_res").innerHTML = '<div class="errbox">La huella debe tener 64 caracteres hexadecimales.</div>'; return; }
-  if(!acta || acta.hash !== h){ $("v_res").innerHTML = '<div class="errbox">No se encontró un acta con esa huella en este sistema.</div>'; return; }
-  const integro = await integridadOk();
-  const c = acta.contenido;
+  const ent = coleccion.find(e => e.acta && e.acta.hash === h);
+  const a = ent ? ent.acta : null;
+  if(!a){ $("v_res").innerHTML = '<div class="errbox">No se encontró un acta con esa huella en este sistema.</div>'; return; }
+  const integro = await integridadOk(a);
+  const c = a.contenido;
   $("v_res").innerHTML = `<div class="${integro ? "okbox" : "errbox"}">${integro ? "Acta auténtica e íntegra." : "El contenido almacenado no coincide con la huella."}</div>
     <table style="margin-top:10px">
       <tr><th style="width:35%">Legajo</th><td>${esc(c.numero)}</td></tr>
       <tr><th>Resultado</th><td>${esc(c.tipo)}</td></tr>
       <tr><th>Modalidad</th><td>${esc(c.modalidad)}</td></tr>
       <tr><th>Fecha de audiencia</th><td>${esc(c.fecha)}</td></tr>
-      <tr><th>Conformidades</th><td>${acta.requiereConf ? acta.partes.filter(p=>p.estado==="conforme").length + " de " + acta.partes.length : "No requeridas (audiencia no realizada)"}</td></tr>
-      <tr><th>Firma del mediador/a</th><td>${acta.firma ? "Firmada el " + fmt(acta.firma.fecha) : "Pendiente"}</td></tr>
+      <tr><th>Conformidades</th><td>${a.requiereConf ? a.partes.filter(p=>p.estado==="conforme").length + " de " + a.partes.length : "No requeridas (audiencia no realizada)"}</td></tr>
+      <tr><th>Firma del mediador/a</th><td>${a.firma ? "Firmada el " + fmt(a.firma.fecha) : "Pendiente"}</td></tr>
     </table>
     <p class="sub" style="margin-top:8px">Por confidencialidad, la verificación no muestra el texto del acta.</p>`;
 }
@@ -923,23 +1030,7 @@ $("btnVerificar").addEventListener("click", () => verificar($("v_hash").value));
 
 /* ============ Inicio ============ */
 cargar();
-if(acta){
-  const c = acta.contenido;
-  $("f_numero").value = c.numero; $("f_cuij").value = c.cuij; $("f_tipo").value = c.tipo; $("f_mediador").value = c.mediador;
-  $("f_fecha").value = c.fecha; $("f_texto").value = c.texto; $("f_lectura").checked = true;
-  if(acta.form){ $("f_plataforma").value = acta.form.plataformaSel; $("f_plat_otra").value = acta.form.plataformaOtra || "";
-    $("w_otra").classList.toggle("hidden", acta.form.plataformaSel !== "Otra"); }
-  if(c.archivo){
-    document.querySelector('input[name="fuente"][value="archivo"]').checked = true;
-    archivoCargado = {...c.archivo, dataUrl: acta.archivoData};
-    $("arch_info").innerHTML = `<div class="okbox">${esc(c.archivo.nombre)} · ${kb(c.archivo.tamano)}</div>`;
-    previewArchivo(archivoCargado, $("arch_prev"));
-  }
-  mostrarFuente();
-  acta.partes.forEach(p => filaParte(p));
-} else { filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"}); }
-notaResultado();
-render(); renderBandeja(); renderLog();
+refrescarTodo();
 const m = location.hash.match(/verificar=([0-9a-f]{64})/i);
 if(m){ irA("verificar"); $("v_hash").value = m[1]; verificar(m[1]); }
 </script>
