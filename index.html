@@ -17,7 +17,10 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
 .banner{background:#7a1f1f;color:#fff;text-align:center;padding:6px 12px;font-size:13px;font-weight:600;letter-spacing:.3px}
-header{background:var(--pri);color:#fff;padding:14px 20px}
+header{background:var(--pri);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+#sesion{display:flex;align-items:center;gap:10px;font-size:13px}
+#sesion .cuenta{opacity:.9}
+#sesion .btn{background:#fff;color:var(--pri);border:0}
 header h1{margin:0;font-size:19px;font-weight:600}
 header p{margin:2px 0 0;font-size:13px;opacity:.85}
 nav{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--line);padding:0 16px;overflow-x:auto}
@@ -99,8 +102,11 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
 <body>
 <div class="banner">PROTOTIPO DEMOSTRATIVO — USAR EXCLUSIVAMENTE DATOS FICTICIOS — SIN VALIDEZ JURÍDICA</div>
 <header>
-  <h1>Firma Remota de Actas de Mediación</h1>
-  <p>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura CABA</p>
+  <div>
+    <h1>Firma Remota de Actas de Mediación</h1>
+    <p>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura CABA</p>
+  </div>
+  <div id="sesion" class="noprint"></div>
 </header>
 <nav>
   <button class="act" data-tab="circuito">Circuito del acta</button>
@@ -564,6 +570,36 @@ function cuentaAutorizada(c){
 }
 function validarCuenta(c){ if(!cuentaAutorizada(c)) throw new Error("Solo se admiten cuentas institucionales @jusbaires.gob.ar."); return c; }
 async function tokenMS(scopes){
+  try{ return await tokenMSBase(scopes); } finally { renderSesion(); }
+}
+function cuentaActual(){
+  try{ return window.msal ? (msalInst().getAllAccounts().find(cuentaAutorizada) || null) : null; }catch(e){ return null; }
+}
+function renderSesion(){
+  if(window.opener && /code=|error=/.test(location.hash)) return; // ventana emergente de inicio de sesión
+  const c = cuentaActual();
+  $("sesion").innerHTML = c
+    ? `<span class="cuenta">Sesión: <b>${esc(c.username)}</b></span><button class="btn sm" id="btnSalir">Cerrar sesión</button>`
+    : `<span class="cuenta">Sin sesión de Microsoft</span><button class="btn sm" id="btnEntrar">Iniciar sesión</button>`;
+  const s = $("btnSalir"), e = $("btnEntrar");
+  if(s) s.addEventListener("click", cerrarSesion);
+  if(e) e.addEventListener("click", async () => {
+    try{ await tokenMS(MS.envio); }
+    catch(err){ alert(err.message === "CONSENT" ? "La cuenta no tiene autorizado el permiso para enviar correo desde esta aplicación." : err.message); }
+  });
+}
+async function cerrarSesion(){
+  const c = cuentaActual();
+  if(!confirm(`¿Cerrar la sesión de ${c ? c.username : "Microsoft"} en esta página?\n\nOutlook y las demás aplicaciones de Microsoft no se cierran.`)) return;
+  try{
+    // Cierre local: borra la sesión de esta página sin cerrar la cuenta de Microsoft en el navegador
+    await msalInst().logoutRedirect({onRedirectNavigate: () => false});
+  }catch(e){}
+  try{ Object.keys(sessionStorage).filter(k => k.startsWith("msal.") || k.includes(MS.clientId)).forEach(k => sessionStorage.removeItem(k)); }catch(e){}
+  msalApp = null;
+  renderSesion();
+}
+async function tokenMSBase(scopes){
   const app = msalInst();
   let cuenta = app.getAllAccounts().find(cuentaAutorizada) || null;
   try{
@@ -1200,6 +1236,7 @@ $("btnVerificar").addEventListener("click", () => verificar($("v_hash").value));
 /* ============ Inicio ============ */
 cargar();
 refrescarTodo();
+renderSesion();
 const m = location.hash.match(/verificar=([0-9a-f]{64})/i);
 if(m){ irA("verificar"); $("v_hash").value = m[1]; verificar(m[1]); }
 </script>
