@@ -551,8 +551,10 @@ function codigoParte(){
 }
 const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ");
 
-function cuerpoCorreo(p, ref){
+function cuerpoCorreo(p, ref, remitente){
   const c = acta.contenido;
+  const asunto = `RE: Acta de mediación ${c.numero} — conformidad [${ref}]`;
+  const mailto = `mailto:${encodeURIComponent(remitente)}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent("PRESTO CONFORMIDAD " + p.codigo)}`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1c2533;line-height:1.5;max-width:720px">
   <p style="color:#a12a2a;font-size:11px;margin:0 0 10px">PROTOTIPO DEMOSTRATIVO — DATOS FICTICIOS — SIN VALIDEZ JURÍDICA</p>
   <h2 style="color:#1f4e79;margin:0 0 12px">Acta de audiencia de mediación</h2>
@@ -563,8 +565,9 @@ function cuerpoCorreo(p, ref){
     : `<div style="white-space:pre-wrap;border:1px solid #d9dee6;border-radius:6px;padding:12px;background:#fafbfd">${esc(c.texto)}</div>`}
   <p><b>Huella digital del acta (SHA-256):</b><br><span style="font-family:Consolas,monospace;font-size:12px">${acta.hash}</span></p>
   <div style="border-left:4px solid #1e7a46;background:#e6f4ec;padding:12px 14px;margin:14px 0">
-    <p style="margin:0 0 6px">Para prestar conformidad, <b>responda este correo desde esta misma casilla</b> escribiendo en el mensaje:</p>
-    <p style="font-size:17px;margin:0"><b>PRESTO CONFORMIDAD ${p.codigo}</b></p>
+    <p style="margin:0 0 10px">Para prestar conformidad, presione el botón y <b>envíe el correo que se abre, sin modificarlo</b>, desde esta misma casilla:</p>
+    <p style="margin:0 0 12px"><a href="${mailto}" style="display:inline-block;background:#1e7a46;color:#ffffff;text-decoration:none;font-weight:bold;padding:10px 18px;border-radius:6px">Prestar conformidad</a></p>
+    <p style="margin:0;font-size:13px">Si el botón no funciona, responda este correo escribiendo: <b>PRESTO CONFORMIDAD ${p.codigo}</b></p>
   </div>
   <p>Si no está de acuerdo con el contenido del acta, responda indicando sus observaciones sin incluir la frase anterior.</p>
   <p style="color:#5b6575;font-size:12px">Referencia ${ref}. Este correo es personal: no lo reenvíe.<br>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires.</p>
@@ -590,7 +593,7 @@ async function enviarReal(i){
       headers: {Authorization: "Bearer " + acc.token, "Content-Type": "application/json"},
       body: JSON.stringify({saveToSentItems: true, message: {
         subject: `Acta de mediación ${acta.contenido.numero} — conformidad requerida [${ref}]`,
-        body: {contentType: "HTML", content: cuerpoCorreo(p, ref)},
+        body: {contentType: "HTML", content: cuerpoCorreo(p, ref, acc.cuenta.username)},
         toRecipients: [{emailAddress: {address: p.email, name: p.nombre}}],
         attachments: adjuntos
       }})
