@@ -537,7 +537,7 @@ async function tokenMS(scopes){
   }catch(e){
     if(e && e.message && e.message.startsWith("Solo se admiten")) throw e;
     const cod = String((e && (e.errorCode || "")) + " " + (e && e.message || ""));
-    if(/consent|AADSTS65001|AADSTS90094|AADSTS90008/i.test(cod)) throw new Error("CONSENT");
+    if(/consent|declined|AADSTS65001|AADSTS65004|AADSTS90094|AADSTS90008/i.test(cod)) throw new Error("CONSENT");
     if(/user_cancelled/.test(cod)) throw new Error("Se canceló el inicio de sesión de Microsoft.");
     if(/popup/i.test(cod)) throw new Error("El navegador bloqueó la ventana de Microsoft. Permití las ventanas emergentes para este sitio.");
     if(/AADSTS50011|redirect/i.test(cod)) throw new Error("La dirección de esta página no está registrada en la aplicación de Azure (URI de redirección).");
@@ -622,7 +622,7 @@ async function buscarRespuestas(){
   try{ acc = await tokenMS(MS.lectura); }
   catch(e){
     msgP2("errbox", e.message === "CONSENT"
-      ? "El permiso de lectura de correo (Mail.Read) todavía no está autorizado para esta aplicación. Mientras tanto, usá <b>Registrar respuesta</b> en cada parte después de verificar la respuesta en Outlook."
+      ? "La lectura automática de respuestas requiere que un administrador del tenant apruebe el permiso Mail.Read. Mientras tanto, verificá la respuesta en Outlook y usá <b>Registrar respuesta</b> en cada parte."
       : esc(e.message));
     return;
   }
@@ -640,14 +640,19 @@ async function buscarRespuestas(){
   const mensajes = (datos.value || []).sort((a,b) => a.receivedDateTime.localeCompare(b.receivedDateTime));
   for(const m of mensajes){
     const de = String(m.from && m.from.emailAddress && m.from.emailAddress.address || "").toLowerCase();
-    const i = acta.partes.findIndex(p => p.email.toLowerCase() === de);
-    if(i < 0) continue;
-    const p = acta.partes[i];
-    if(p.estado === "conforme" || !p.envioReal) continue;
-    if(new Date(m.receivedDateTime) < new Date(p.envioReal.fecha)) continue;
     // uniqueBody excluye el texto citado del correo original
     const txt = normTxt(m.uniqueBody && m.uniqueBody.content);
-    if(txt.includes("PRESTO CONFORMIDAD") && txt.includes(p.codigo)){
+    // Partes con ese correo, pendientes y ya notificadas antes de la respuesta
+    const cand = acta.partes.map((p, k) => k).filter(k => {
+      const p = acta.partes[k];
+      return p.email.toLowerCase() === de && p.estado !== "conforme" && p.envioReal && new Date(m.receivedDateTime) >= new Date(p.envioReal.fecha);
+    });
+    if(!cand.length) continue;
+    // El código identifica a la parte aunque varias compartan correo
+    const conCodigo = cand.find(k => txt.includes(acta.partes[k].codigo));
+    const i = conCodigo !== undefined ? conCodigo : cand[0];
+    const p = acta.partes[i];
+    if(txt.includes("PRESTO CONFORMIDAD") && conCodigo !== undefined){
       p.estado = "conforme";
       p.conformidad = {fecha: m.receivedDateTime, medio: "correo", remitente: de, mensaje: m.internetMessageId, hashAceptado: acta.hash};
       await registrar("Conformidad recibida por correo", `${p.rol} ${p.nombre} desde ${de}. Frase y código verificados. Mensaje ${m.internetMessageId}.`);
