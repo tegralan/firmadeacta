@@ -132,6 +132,7 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
         <select id="f_plataforma"><option>Microsoft Teams</option><option>Zoom</option><option>Google Meet</option><option>Videollamada de WhatsApp</option><option>Otra</option></select></div>
       <div id="w_otra" class="hidden"><label>Especificar plataforma</label><input id="f_plat_otra" placeholder="Nombre de la plataforma"></div>
     </div>
+    <div class="note" id="resNota"></div>
 
     <label style="margin-top:16px">Partes intervinientes</label>
     <div id="partes"></div>
@@ -149,7 +150,7 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
       <div id="arch_prev"></div>
     </div>
 
-    <div class="check"><input type="checkbox" id="f_lectura"><span>Dejo constancia de que el acta fue leída en la audiencia virtual y de que cada parte manifestó verbalmente su conformidad.</span></div>
+    <div class="check" id="w_lectura"><input type="checkbox" id="f_lectura"><span>Dejo constancia de que el acta fue leída en la audiencia virtual y de que cada parte manifestó verbalmente su conformidad.</span></div>
     <div id="p1err" class="errbox hidden"></div>
     <div class="row"><button class="btn" id="btnBloquear">Bloquear texto y generar acta</button></div>
   </div>
@@ -257,17 +258,23 @@ function dataUrlToBlob(du){
 const kb = (n) => n > 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.ceil(n/1024) + " KB";
 
 /* ============ Configuración ============ */
-// PROVISORIO: reemplazar por la lista exacta de resultados que se usa en EJE y en la planilla de mediaciones.
-const RESULTADOS = [
-  "Acuerdo total",
-  "Acuerdo parcial",
-  "Sin acuerdo",
-  "Pasa a nueva audiencia",
-  "Incomparecencia de la parte requirente",
-  "Incomparecencia de la parte requerida",
-  "Incomparecencia de ambas partes",
-  "Desistimiento"
+// Resultados tomados de la lista de validación de la planilla "Mediaciones Virtuales" (columna Resultado de la Mediacion).
+// Los estados administrativos (Cancelada, No se realiza..., Suspendida, Reprogramación, Otros) no generan acta y no se incluyen.
+const RES_CON_CONFORMIDAD = [
+  "Audiencia realizada con acuerdo",
+  "Audiencia realizada sin acuerdo",
+  "Audiencia realizada se requiere nueva audiencia",
+  "Audiencia realizada y cerrada por decisión del mediador"
 ];
+const RES_SIN_CONFORMIDAD = [
+  "Audiencia no realizada por incomparecencia del/la denunciante",
+  "Audiencia no realizada por incomparecencia del denunciado/a",
+  "Audiencia no realizada por incomparecencia de ambas partes",
+  "Audiencia no realizada se requiere nueva audiencia",
+  "Audiencia no realizada por decisión del mediador"
+];
+const RESULTADOS = [...RES_CON_CONFORMIDAD, ...RES_SIN_CONFORMIDAD];
+const requiereConformidad = (r) => RES_CON_CONFORMIDAD.includes(r);
 const ROLES = ["Requirente","Requerido/a","Letrado/a requirente","Letrado/a requerido/a","Defensor/a","Otro"];
 const MAX_ARCHIVO = 10 * 1048576;
 
@@ -316,7 +323,17 @@ function filaParte(p = {}){
 }
 $("btnAddParte").addEventListener("click", () => filaParte());
 
-$("f_tipo").innerHTML = RESULTADOS.map(r => `<option>${esc(r)}</option>`).join("");
+$("f_tipo").innerHTML =
+  `<optgroup label="Audiencia realizada — requiere conformidad de las partes">${RES_CON_CONFORMIDAD.map(r => `<option>${esc(r)}</option>`).join("")}</optgroup>` +
+  `<optgroup label="Audiencia no realizada — constancia firmada solo por el/la mediador/a">${RES_SIN_CONFORMIDAD.map(r => `<option>${esc(r)}</option>`).join("")}</optgroup>`;
+function notaResultado(){
+  const conf = requiereConformidad($("f_tipo").value);
+  $("resNota").textContent = conf
+    ? "Este resultado requiere la conformidad electrónica de todas las partes antes de la firma del/la mediador/a."
+    : "Constancia de audiencia no realizada: no requiere conformidad de las partes; la firma solo el/la mediador/a. Correo y teléfono de las partes son opcionales.";
+  $("w_lectura").classList.toggle("hidden", !conf);
+}
+$("f_tipo").addEventListener("change", notaResultado);
 $("f_plataforma").addEventListener("change", () => $("w_otra").classList.toggle("hidden", $("f_plataforma").value !== "Otra"));
 function fuenteActual(){ return document.querySelector('input[name="fuente"]:checked').value; }
 function mostrarFuente(){
@@ -364,7 +381,7 @@ $("f_archivo").addEventListener("change", async () => {
 $("btnEjemplo").addEventListener("click", () => {
   $("f_numero").value = "MED-0123/2026";
   $("f_cuij").value = "J-99-00000001-0/2026-0";
-  $("f_tipo").value = RESULTADOS[0];
+  $("f_tipo").value = RESULTADOS[0]; notaResultado();
   $("f_plataforma").value = "Zoom"; $("w_otra").classList.add("hidden");
   document.querySelector('input[name="fuente"][value="texto"]').checked = true; mostrarFuente();
   $("f_mediador").value = "Mediadora Ejemplo Uno";
@@ -417,11 +434,13 @@ $("btnBloquear").addEventListener("click", async () => {
   if(f.plataformaSel === "Otra" && !f.plataformaOtra) err.push("Especificá la plataforma utilizada.");
   if(f.fuente === "texto" && f.texto.length < 20) err.push("El texto del acta es demasiado breve.");
   if(f.fuente === "archivo" && !archivoCargado) err.push("Subí el archivo del acta.");
+  const conf = requiereConformidad(f.tipo);
   f.partes.forEach((p,i) => {
-    if(!p.nombre || !p.email || !p.tel) err.push(`Parte ${i+1}: nombre, correo y teléfono son obligatorios.`);
-    else if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email)) err.push(`Parte ${i+1}: correo inválido.`);
+    if(!p.nombre) err.push(`Parte ${i+1}: el nombre es obligatorio.`);
+    else if(conf && (!p.email || !p.tel)) err.push(`Parte ${i+1}: correo y teléfono son obligatorios para enviar la conformidad.`);
+    else if(p.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email)) err.push(`Parte ${i+1}: correo inválido.`);
   });
-  if(!$("f_lectura").checked) err.push("Debe dejarse constancia de la lectura y la conformidad verbal en audiencia.");
+  if(conf && !$("f_lectura").checked) err.push("Debe dejarse constancia de la lectura y la conformidad verbal en audiencia.");
   if(err.length){ $("p1err").innerHTML = err.map(esc).join("<br>"); $("p1err").classList.remove("hidden"); return; }
   $("p1err").classList.add("hidden");
 
@@ -439,11 +458,12 @@ $("btnBloquear").addEventListener("click", async () => {
     contenido, canon, hash, bloqueada: ahora(),
     archivoData: f.fuente === "archivo" ? archivoCargado.dataUrl : null,
     form: {plataformaSel: f.plataformaSel, plataformaOtra: f.plataformaOtra},
-    partes: f.partes.map(p => ({...p, token: aleatorio(16), estado:"pendiente", otp:null, otpVence:null, conformidad:null, intentos:0})),
+    requiereConf: conf,
+    partes: f.partes.map(p => ({...p, token: aleatorio(16), estado: conf ? "pendiente" : "no-requerida", otp:null, otpVence:null, conformidad:null, intentos:0})),
     firma: null
   };
   const origen = contenido.archivo ? `Archivo ${contenido.archivo.nombre} (SHA-256 ${contenido.archivo.sha256})` : "Texto redactado en el sistema";
-  await registrar("Acta bloqueada", `Legajo ${f.numero}. ${f.tipo}. ${f.modalidad}. ${origen}. Huella ${hash}. Constancia de lectura en audiencia: sí.`);
+  await registrar("Acta bloqueada", `Legajo ${f.numero}. ${f.tipo}. ${f.modalidad}. ${origen}. Huella ${hash}. ${conf ? "Constancia de lectura en audiencia: sí." : "No requiere conformidad de las partes."}`);
   render();
 });
 
@@ -515,7 +535,7 @@ $("btnCerrarModal").addEventListener("click", () => $("modal").classList.add("hi
 
 /* ============ Paso 3: firma ============ */
 $("btnFirmar").addEventListener("click", async () => {
-  if(!acta || acta.partes.some(p => p.estado !== "conforme")) return;
+  if(!acta || (acta.requiereConf && acta.partes.some(p => p.estado !== "conforme"))) return;
   if(!(await integridadOk())){ alert("La huella no coincide: el acta fue alterada."); return; }
   acta.firma = {fecha: ahora(), firmante: acta.contenido.mediador, serie: aleatorio(8).toUpperCase(),
     hashFinal: await sha256(acta.hash + JSON.stringify(acta.partes.map(p => p.conformidad)))};
@@ -539,12 +559,16 @@ function bloquearForm(si){
   document.querySelectorAll("#p1 input, #p1 select, #p1 textarea, #p1 button").forEach(el => el.disabled = si);
 }
 function render(){
-  const paso = !acta ? 1 : acta.firma ? 4 : acta.partes.every(p => p.estado === "conforme") ? 3 : 2;
+  const conf = acta ? acta.requiereConf : true;
+  const faltan = acta && conf ? acta.partes.filter(p => p.estado !== "conforme").length : 0;
+  const paso = !acta ? 1 : acta.firma ? 4 : faltan === 0 ? 3 : 2;
   document.querySelectorAll(".step").forEach(s => {
     const n = +s.dataset.s; s.classList.toggle("cur", n === paso); s.classList.toggle("done", n < paso);
   });
   bloquearForm(!!acta);
-  $("p2").classList.toggle("hidden", !acta);
+  const s2 = document.querySelector('.step[data-s="2"]');
+  s2.innerHTML = acta && !conf ? "<b>Paso 2</b>No requerida (audiencia no realizada)" : "<b>Paso 2</b>Conformidad de las partes";
+  $("p2").classList.toggle("hidden", !acta || !conf);
   $("p3").classList.toggle("hidden", !acta);
   $("p4").classList.toggle("hidden", !(acta && acta.firma));
   if(!acta) return;
@@ -559,9 +583,9 @@ function render(){
   document.querySelectorAll("[data-env]").forEach(b => b.addEventListener("click", () => enviarEnlace(+b.dataset.env)));
   $("btnEnviarTodos").disabled = !!acta.firma || acta.partes.every(p => p.estado !== "pendiente");
 
-  const faltan = acta.partes.filter(p => p.estado !== "conforme").length;
   $("p3estado").innerHTML = acta.firma
     ? `<div class="okbox">Acta firmada digitalmente el ${fmt(acta.firma.fecha)}.</div>`
+    : !conf ? `<div class="okbox">Constancia de audiencia no realizada: no requiere conformidad de las partes. Se puede firmar.</div>`
     : faltan ? `<div class="note">Faltan ${faltan} conformidad(es) para habilitar la firma.</div>`
     : `<div class="okbox">Todas las partes prestaron conformidad. Se puede firmar.</div>`;
   $("btnFirmar").disabled = !!acta.firma || faltan > 0;
@@ -586,11 +610,17 @@ function renderDoc(){
     ${c.archivo
       ? `<div class="cuerpo">El contenido del acta consta en el documento adjunto <b>${esc(c.archivo.nombre)}</b> (${kb(c.archivo.tamano)}), cuya huella SHA-256 es:</div><div class="hash">${c.archivo.sha256}</div><div id="docPrev"></div>`
       : `<div class="cuerpo">${esc(c.texto)}</div>`}
+    ${acta.requiereConf ? `
     <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Conformidades electrónicas</b> (validadas por enlace al correo constituido y código al teléfono declarado):</p>
     <table>
       <thead><tr><th>Parte</th><th>DNI</th><th>Fecha y hora</th><th>IP</th></tr></thead>
       <tbody>${acta.partes.map(p => `<tr><td>${esc(p.nombre)}<br><span style="color:#666">${esc(p.rol)}</span></td><td>${esc(p.dni || "—")}</td><td>${fmt(p.conformidad.fecha)}</td><td>${esc(p.conformidad.ip)}</td></tr>`).join("")}</tbody>
-    </table>
+    </table>` : `
+    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Partes convocadas</b> (constancia de audiencia no realizada; no requiere conformidad de las partes):</p>
+    <table>
+      <thead><tr><th>Parte</th><th>DNI</th></tr></thead>
+      <tbody>${acta.partes.map(p => `<tr><td>${esc(p.nombre)}<br><span style="color:#666">${esc(p.rol)}</span></td><td>${esc(p.dni || "—")}</td></tr>`).join("")}</tbody>
+    </table>`}
     <div class="firma">
       <div id="qr"></div>
       <div>
@@ -655,7 +685,7 @@ async function verificar(h){
       <tr><th>Resultado</th><td>${esc(c.tipo)}</td></tr>
       <tr><th>Modalidad</th><td>${esc(c.modalidad)}</td></tr>
       <tr><th>Fecha de audiencia</th><td>${esc(c.fecha)}</td></tr>
-      <tr><th>Conformidades</th><td>${acta.partes.filter(p=>p.estado==="conforme").length} de ${acta.partes.length}</td></tr>
+      <tr><th>Conformidades</th><td>${acta.requiereConf ? acta.partes.filter(p=>p.estado==="conforme").length + " de " + acta.partes.length : "No requeridas (audiencia no realizada)"}</td></tr>
       <tr><th>Firma del mediador/a</th><td>${acta.firma ? "Firmada el " + fmt(acta.firma.fecha) : "Pendiente"}</td></tr>
     </table>
     <p class="sub" style="margin-top:8px">Por confidencialidad, la verificación no muestra el texto del acta.</p>`;
@@ -679,6 +709,7 @@ if(acta){
   mostrarFuente();
   acta.partes.forEach(p => filaParte(p));
 } else { filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"}); }
+notaResultado();
 render(); renderBandeja(); renderLog();
 const m = location.hash.match(/verificar=([0-9a-f]{64})/i);
 if(m){ irA("verificar"); $("v_hash").value = m[1]; verificar(m[1]); }

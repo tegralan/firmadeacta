@@ -19,6 +19,11 @@ Todo funciona en el navegador. El correo, el SMS, la IP y la firma digital son *
 
 La versión institucional requeriría un backend (Python/FastAPI) alojado por la Dirección General de Informática y Tecnología, con envío real de correos y códigos, firma digital remota del mediador (PAdES) e incorporación del acta a EJE.
 
-## Pendiente
+## Resultados del acta
 
-- Reemplazar la lista provisoria `RESULTADOS` (en `index.html`) por los resultados exactos que se usan en EJE y en la planilla de mediaciones.
+Tomados de la lista de validación de la planilla *Mediaciones Virtuales* (columna "Resultado de la Mediacion"):
+
+- **Audiencia realizada** (requieren conformidad de las partes): con acuerdo; sin acuerdo; se requiere nueva audiencia; cerrada por decisión del mediador.
+- **Audiencia no realizada** (constancia firmada solo por el/la mediador/a): incomparecencia del/la denunciante, del denunciado/a o de ambas partes; se requiere nueva audiencia; por decisión del mediador.
+
+Los estados administrativos (Cancelada, No se realiza por…, Suspendida, Reprogramación, Otros) no generan acta y no se incluyen.
