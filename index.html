@@ -6,6 +6,7 @@
 <title>Firma Remota de Actas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js" crossorigin="anonymous"></script>
 <style>
 :root{
   --bg:#f3f5f8; --card:#ffffff; --ink:#1c2533; --muted:#5b6575; --line:#d9dee6;
@@ -158,13 +159,21 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
   <!-- Paso 2 -->
   <div class="card noprint hidden" id="p2">
     <h2>2. Conformidad electrónica de las partes</h2>
-    <p class="sub">Cada parte recibe en su correo constituido un enlace único. Para prestar conformidad debe validar un código enviado a su teléfono. Abrí la pestaña <b>Bandeja simulada</b> para actuar como cada parte.</p>
+    <label>Modo de envío</label>
+    <div class="seg">
+      <label class="opt"><input type="radio" name="modo" value="sim" checked> Simulado (demostración)</label>
+      <label class="opt"><input type="radio" name="modo" value="real"> Correo real desde Microsoft 365</label>
+    </div>
+    <p class="sub" id="p2desc"></p>
     <div><label>Huella del acta (SHA-256)</label><div class="hash" id="p2hash"></div></div>
     <div style="margin-top:12px;overflow-x:auto">
       <table><thead><tr><th>Parte</th><th>Correo</th><th>Estado</th><th></th></tr></thead><tbody id="p2tabla"></tbody></table>
     </div>
-    <div class="row"><button class="btn sec" id="btnEnviarTodos">Enviar enlaces a todas las partes</button></div>
-    <div class="note">En el sistema real el envío se haría desde una casilla institucional y el código por SMS. Aquí ambos se simulan dentro de la página.</div>
+    <div class="row">
+      <button class="btn sec" id="btnEnviarTodos">Enviar a todas las partes</button>
+      <button class="btn hidden" id="btnBuscar">Buscar respuestas en mi bandeja</button>
+    </div>
+    <div id="p2msg"></div>
   </div>
 
   <!-- Paso 3 -->
@@ -471,15 +480,203 @@ $("btnBloquear").addEventListener("click", async () => {
 async function enviarEnlace(i){
   const p = acta.partes[i];
   if(p.estado === "conforme") return;
-  p.estado = "enviado";
+  p.estado = "enviado"; acta.modo = "sim";
   correos.unshift({i, fecha: ahora(), para: p.email,
     asunto: `Acta ${acta.contenido.numero} — conformidad requerida`, token: p.token});
   await registrar("Enlace enviado", `${p.rol} ${p.nombre} → ${p.email} (token ${corto(p.token)})`);
   render(); renderBandeja();
 }
 $("btnEnviarTodos").addEventListener("click", async () => {
-  for(let i=0;i<acta.partes.length;i++) if(acta.partes[i].estado === "pendiente") await enviarEnlace(i);
+  for(let i=0;i<acta.partes.length;i++){
+    if(acta.partes[i].estado !== "pendiente") continue;
+    if(modoActual() === "real"){ if(!(await enviarReal(i))) break; }
+    else await enviarEnlace(i);
+  }
 });
+
+/* ============ Modo real: Microsoft 365 (mismo registro de aplicación que "ficha") ============ */
+const MS = {
+  clientId: "b26fea36-887e-4021-8611-08c97de5704e",
+  tenants: ["8e643b8b-b7de-4008-8503-d74eb8b64e7e", "fd710a70-ae1e-49a9-b23a-6413aa1a1622"],
+  dominios: ["@jusbaires.gob.ar"],
+  envio: ["User.Read", "Mail.Send"],
+  lectura: ["Mail.Read"],
+  maxAdjunto: 3 * 1048576
+};
+let msalApp = null;
+function modoActual(){ return (acta && acta.modo) || document.querySelector('input[name="modo"]:checked').value; }
+function msgP2(tipo, html){ $("p2msg").innerHTML = html ? `<div class="${tipo}">${html}</div>` : ""; }
+function msalInst(){
+  if(!window.msal) throw new Error("No se pudo cargar el acceso de Microsoft. Recargá la página.");
+  if(!msalApp) msalApp = new msal.PublicClientApplication({
+    auth: {clientId: MS.clientId, authority: "https://login.microsoftonline.com/organizations",
+      redirectUri: location.origin + location.pathname, navigateToLoginRequestUrl: false},
+    cache: {cacheLocation: "sessionStorage", storeAuthStateInCookie: false}
+  });
+  return msalApp;
+}
+function cuentaAutorizada(c){
+  if(!c) return false;
+  const correo = String(c.username || "").toLowerCase();
+  const tid = String(c.tenantId || (c.idTokenClaims && c.idTokenClaims.tid) || "").toLowerCase();
+  return MS.dominios.some(d => correo.endsWith(d)) && MS.tenants.includes(tid);
+}
+function validarCuenta(c){ if(!cuentaAutorizada(c)) throw new Error("Solo se admiten cuentas institucionales @jusbaires.gob.ar."); return c; }
+async function tokenMS(scopes){
+  const app = msalInst();
+  let cuenta = app.getAllAccounts().find(cuentaAutorizada) || null;
+  try{
+    if(!cuenta){
+      const r = await app.loginPopup({scopes, prompt: "select_account"});
+      cuenta = validarCuenta(r.account); app.setActiveAccount(cuenta);
+      return {token: r.accessToken, cuenta};
+    }
+    app.setActiveAccount(cuenta);
+    try{ const r = await app.acquireTokenSilent({scopes, account: cuenta}); return {token: r.accessToken, cuenta}; }
+    catch(e){ const r = await app.acquireTokenPopup({scopes, account: cuenta}); return {token: r.accessToken, cuenta: validarCuenta(r.account || cuenta)}; }
+  }catch(e){
+    if(e && e.message && e.message.startsWith("Solo se admiten")) throw e;
+    const cod = String((e && (e.errorCode || "")) + " " + (e && e.message || ""));
+    if(/consent|AADSTS65001|AADSTS90094|AADSTS90008/i.test(cod)) throw new Error("CONSENT");
+    if(/user_cancelled/.test(cod)) throw new Error("Se canceló el inicio de sesión de Microsoft.");
+    if(/popup/i.test(cod)) throw new Error("El navegador bloqueó la ventana de Microsoft. Permití las ventanas emergentes para este sitio.");
+    if(/AADSTS50011|redirect/i.test(cod)) throw new Error("La dirección de esta página no está registrada en la aplicación de Azure (URI de redirección).");
+    throw new Error("No se pudo iniciar sesión con Microsoft 365.");
+  }
+}
+function refActa(){ return "FA" + acta.hash.slice(0,8).toUpperCase(); }
+function codigoParte(){
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const a = new Uint8Array(6); crypto.getRandomValues(a);
+  return [...a].map(b => abc[b % abc.length]).join("");
+}
+const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ");
+
+function cuerpoCorreo(p, ref){
+  const c = acta.contenido;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1c2533;line-height:1.5;max-width:720px">
+  <p style="color:#a12a2a;font-size:11px;margin:0 0 10px">PROTOTIPO DEMOSTRATIVO — DATOS FICTICIOS — SIN VALIDEZ JURÍDICA</p>
+  <h2 style="color:#1f4e79;margin:0 0 12px">Acta de audiencia de mediación</h2>
+  <p>Sr./Sra. ${esc(p.nombre)}:</p>
+  <p>Se le remite el acta de la audiencia de mediación virtual del legajo <b>${esc(c.numero)}</b>, celebrada el ${esc(c.fecha)} (${esc(c.modalidad)}), con el resultado <b>${esc(c.tipo)}</b>.</p>
+  ${c.archivo
+    ? `<p>El acta se adjunta a este correo: <b>${esc(c.archivo.nombre)}</b>.</p>`
+    : `<div style="white-space:pre-wrap;border:1px solid #d9dee6;border-radius:6px;padding:12px;background:#fafbfd">${esc(c.texto)}</div>`}
+  <p><b>Huella digital del acta (SHA-256):</b><br><span style="font-family:Consolas,monospace;font-size:12px">${acta.hash}</span></p>
+  <div style="border-left:4px solid #1e7a46;background:#e6f4ec;padding:12px 14px;margin:14px 0">
+    <p style="margin:0 0 6px">Para prestar conformidad, <b>responda este correo desde esta misma casilla</b> escribiendo en el mensaje:</p>
+    <p style="font-size:17px;margin:0"><b>PRESTO CONFORMIDAD ${p.codigo}</b></p>
+  </div>
+  <p>Si no está de acuerdo con el contenido del acta, responda indicando sus observaciones sin incluir la frase anterior.</p>
+  <p style="color:#5b6575;font-size:12px">Referencia ${ref}. Este correo es personal: no lo reenvíe.<br>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires.</p>
+</div>`;
+}
+
+async function enviarReal(i){
+  const p = acta.partes[i];
+  if(p.estado === "conforme") return true;
+  msgP2("note", `Enviando a ${esc(p.email)}…`);
+  try{
+    if(!(await integridadOk())) throw new Error("La huella no coincide: el acta fue alterada.");
+    if(acta.contenido.archivo && acta.contenido.archivo.tamano > MS.maxAdjunto) throw new Error("Para el envío real el archivo del acta no puede superar 3 MB.");
+    const acc = await tokenMS(MS.envio);
+    if(!p.codigo) p.codigo = codigoParte();
+    const ref = refActa();
+    const adjuntos = acta.contenido.archivo ? [{
+      "@odata.type": "#microsoft.graph.fileAttachment", name: acta.contenido.archivo.nombre,
+      contentType: acta.contenido.archivo.tipo, contentBytes: acta.archivoData.split(",")[1]
+    }] : [];
+    const r = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+      method: "POST",
+      headers: {Authorization: "Bearer " + acc.token, "Content-Type": "application/json"},
+      body: JSON.stringify({saveToSentItems: true, message: {
+        subject: `Acta de mediación ${acta.contenido.numero} — conformidad requerida [${ref}]`,
+        body: {contentType: "HTML", content: cuerpoCorreo(p, ref)},
+        toRecipients: [{emailAddress: {address: p.email, name: p.nombre}}],
+        attachments: adjuntos
+      }})
+    });
+    if(!r.ok){
+      if(r.status === 401 || r.status === 403) throw new Error("Microsoft 365 no autorizó el envío. Cerrá sesión e ingresá nuevamente aceptando el permiso para enviar correo.");
+      let det = ""; try{ det = (await r.json()).error.message; }catch(e){}
+      throw new Error(det || `Microsoft 365 no pudo enviar el correo (código ${r.status}).`);
+    }
+    p.estado = "enviado";
+    p.envioReal = {fecha: ahora(), remitente: acc.cuenta.username};
+    acta.modo = "real";
+    await registrar("Correo enviado (Microsoft 365)", `${p.rol} ${p.nombre} → ${p.email} desde ${acc.cuenta.username}. Referencia ${ref}. Código de conformidad asignado.`);
+    msgP2("okbox", `Correo enviado a ${esc(p.email)}.`);
+    render();
+    return true;
+  }catch(e){
+    msgP2("errbox", esc(e.message === "CONSENT" ? "La cuenta no tiene autorizado el permiso para enviar correo desde esta aplicación." : e.message));
+    return false;
+  }
+}
+
+async function buscarRespuestas(){
+  msgP2("note", "Buscando respuestas en tu bandeja…");
+  let acc;
+  try{ acc = await tokenMS(MS.lectura); }
+  catch(e){
+    msgP2("errbox", e.message === "CONSENT"
+      ? "El permiso de lectura de correo (Mail.Read) todavía no está autorizado para esta aplicación. Mientras tanto, usá <b>Registrar respuesta</b> en cada parte después de verificar la respuesta en Outlook."
+      : esc(e.message));
+    return;
+  }
+  const ref = refActa();
+  const url = `https://graph.microsoft.com/v1.0/me/messages?$search="${ref}"&$select=id,from,receivedDateTime,subject,uniqueBody,internetMessageId&$top=50`;
+  const r = await fetch(url, {headers: {Authorization: "Bearer " + acc.token, Prefer: 'outlook.body-content-type="text"'}});
+  if(!r.ok){
+    msgP2("errbox", r.status === 403
+      ? "Microsoft 365 no autorizó la lectura del correo (Mail.Read). Usá <b>Registrar respuesta</b> mientras se gestiona el permiso."
+      : `No se pudo consultar la bandeja (código ${r.status}).`);
+    return;
+  }
+  const datos = await r.json();
+  let nuevas = 0; const obs = new Map();
+  const mensajes = (datos.value || []).sort((a,b) => a.receivedDateTime.localeCompare(b.receivedDateTime));
+  for(const m of mensajes){
+    const de = String(m.from && m.from.emailAddress && m.from.emailAddress.address || "").toLowerCase();
+    const i = acta.partes.findIndex(p => p.email.toLowerCase() === de);
+    if(i < 0) continue;
+    const p = acta.partes[i];
+    if(p.estado === "conforme" || !p.envioReal) continue;
+    if(new Date(m.receivedDateTime) < new Date(p.envioReal.fecha)) continue;
+    // uniqueBody excluye el texto citado del correo original
+    const txt = normTxt(m.uniqueBody && m.uniqueBody.content);
+    if(txt.includes("PRESTO CONFORMIDAD") && txt.includes(p.codigo)){
+      p.estado = "conforme";
+      p.conformidad = {fecha: m.receivedDateTime, medio: "correo", remitente: de, mensaje: m.internetMessageId, hashAceptado: acta.hash};
+      await registrar("Conformidad recibida por correo", `${p.rol} ${p.nombre} desde ${de}. Frase y código verificados. Mensaje ${m.internetMessageId}.`);
+      obs.delete(i); nuevas++;
+    } else {
+      obs.set(i, `${esc(p.nombre)} respondió el ${fmt(m.receivedDateTime)} sin la frase de conformidad o con un código incorrecto. Revisá la respuesta en Outlook.`);
+    }
+  }
+  guardar(); render();
+  const extra = obs.size ? "<br>" + [...obs.values()].join("<br>") : "";
+  msgP2(obs.size ? "note" : "okbox", (nuevas ? `Se registraron ${nuevas} conformidad(es).` : "No hay conformidades nuevas.") + extra);
+}
+$("btnBuscar").addEventListener("click", buscarRespuestas);
+
+async function registrarManual(i){
+  const p = acta.partes[i];
+  if(!confirm(`¿Confirmás que verificaste en Outlook que ${p.nombre} respondió desde ${p.email} con la frase "PRESTO CONFORMIDAD ${p.codigo}"?`)) return;
+  p.estado = "conforme";
+  p.conformidad = {fecha: ahora(), medio: "manual", remitente: p.email, hashAceptado: acta.hash};
+  await registrar("Conformidad registrada manualmente", `${p.rol} ${p.nombre} (${p.email}). El/la mediador/a declara haber verificado la respuesta en Outlook.`);
+  render();
+}
+
+document.querySelectorAll('input[name="modo"]').forEach(r => r.addEventListener("change", () => {
+  if(!acta) return;
+  if(acta.partes.some(p => p.estado !== "pendiente")){
+    document.querySelector(`input[name="modo"][value="${modoActual()}"]`).checked = true;
+    msgP2("errbox", "No se puede cambiar el modo después de haber enviado a alguna parte.");
+    return;
+  }
+  acta.modo = r.value; guardar(); msgP2("", ""); render();
+}));
 
 function abrirParte(i){
   parteActiva = i; const p = acta.partes[i];
@@ -547,6 +744,8 @@ $("btnNueva").addEventListener("click", () => {
   if(!confirm("¿Descartar el acta actual y comenzar una nueva?")) return;
   acta = null; log = []; correos = []; guardar();
   $("f_texto").value = ""; $("f_lectura").checked = false;
+  document.querySelectorAll('input[name="modo"]').forEach(r => { r.disabled = false; r.checked = r.value === "sim"; });
+  msgP2("", "");
   archivoCargado = null; $("f_archivo").value = ""; $("arch_info").innerHTML = ""; $("arch_prev").innerHTML = "";
   document.querySelector('input[name="fuente"][value="texto"]').checked = true; mostrarFuente();
   $("partes").innerHTML = ""; filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"});
@@ -574,13 +773,28 @@ function render(){
   if(!acta) return;
 
   $("p2hash").textContent = acta.hash;
+  const real = modoActual() === "real";
+  const enviado = acta.partes.some(p => p.estado !== "pendiente");
+  document.querySelector(`input[name="modo"][value="${real ? "real" : "sim"}"]`).checked = true;
+  document.querySelectorAll('input[name="modo"]').forEach(r => r.disabled = enviado);
+  $("p2desc").innerHTML = real
+    ? "Cada parte recibe el acta en su correo constituido, enviada <b>desde tu casilla institucional</b> (Microsoft 365), con un código personal. Para prestar conformidad debe responder desde esa misma casilla con la frase <b>PRESTO CONFORMIDAD</b> y su código. Después usá <b>Buscar respuestas en mi bandeja</b>."
+    : "Cada parte recibe un enlace único y valida un código por SMS. Ambos se simulan dentro de la página: abrí la pestaña <b>Bandeja simulada</b> para actuar como cada parte.";
+  $("btnBuscar").classList.toggle("hidden", !real || !enviado || !!acta.firma);
   $("p2tabla").innerHTML = acta.partes.map((p,i) => {
     const pill = p.estado === "conforme" ? `<span class="pill ok">Conforme · ${fmt(p.conformidad.fecha)}</span>`
-      : p.estado === "enviado" ? `<span class="pill sent">Enlace enviado</span>` : `<span class="pill pend">Pendiente</span>`;
-    const btn = p.estado === "conforme" || acta.firma ? "" : `<button class="btn sec sm" data-env="${i}">${p.estado === "enviado" ? "Reenviar" : "Enviar enlace"}</button>`;
-    return `<tr><td><b>${esc(p.nombre)}</b><br><span class="sub">${esc(p.rol)}</span></td><td>${esc(p.email)}</td><td>${pill}</td><td>${btn}</td></tr>`;
+      : p.estado === "enviado" ? `<span class="pill sent">${real ? "Correo enviado · " + fmt(p.envioReal.fecha) : "Enlace enviado"}</span>` : `<span class="pill pend">Pendiente</span>`;
+    let btn = "";
+    if(p.estado !== "conforme" && !acta.firma){
+      btn = `<button class="btn sec sm" data-env="${i}">${p.estado === "enviado" ? "Reenviar" : (real ? "Enviar correo" : "Enviar enlace")}</button>`;
+      if(real && p.estado === "enviado") btn += ` <button class="btn sec sm" data-man="${i}" title="Usar si verificaste la respuesta en Outlook">Registrar respuesta</button>`;
+    }
+    const cod = real && p.codigo ? `<br><span class="sub">Código ${p.codigo}</span>` : "";
+    return `<tr><td><b>${esc(p.nombre)}</b><br><span class="sub">${esc(p.rol)}</span></td><td>${esc(p.email)}${cod}</td><td>${pill}</td><td style="white-space:nowrap">${btn}</td></tr>`;
   }).join("");
-  document.querySelectorAll("[data-env]").forEach(b => b.addEventListener("click", () => enviarEnlace(+b.dataset.env)));
+  document.querySelectorAll("[data-env]").forEach(b => b.addEventListener("click", () => real ? enviarReal(+b.dataset.env) : enviarEnlace(+b.dataset.env)));
+  document.querySelectorAll("[data-man]").forEach(b => b.addEventListener("click", () => registrarManual(+b.dataset.man)));
+  $("btnEnviarTodos").textContent = real ? "Enviar correos a todas las partes" : "Enviar enlaces a todas las partes";
   $("btnEnviarTodos").disabled = !!acta.firma || acta.partes.every(p => p.estado !== "pendiente");
 
   $("p3estado").innerHTML = acta.firma
@@ -593,6 +807,12 @@ function render(){
   if(acta.firma) renderDoc();
 }
 
+function validacionTxt(p){
+  const c = p.conformidad;
+  if(c.medio === "correo") return `Respuesta por correo desde ${c.remitente} con frase y código verificados`;
+  if(c.medio === "manual") return `Respuesta por correo desde ${c.remitente}, verificada por el/la mediador/a`;
+  return `Enlace al correo y código al teléfono (IP ${c.ip})`;
+}
 function renderDoc(){
   const c = acta.contenido, f = acta.firma;
   const urlVerif = location.href.split("#")[0] + "#verificar=" + acta.hash;
@@ -611,11 +831,12 @@ function renderDoc(){
       ? `<div class="cuerpo">El contenido del acta consta en el documento adjunto <b>${esc(c.archivo.nombre)}</b> (${kb(c.archivo.tamano)}), cuya huella SHA-256 es:</div><div class="hash">${c.archivo.sha256}</div><div id="docPrev"></div>`
       : `<div class="cuerpo">${esc(c.texto)}</div>`}
     ${acta.requiereConf ? `
-    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Conformidades electrónicas</b> (validadas por enlace al correo constituido y código al teléfono declarado):</p>
+    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Conformidades electrónicas de las partes:</b></p>
     <table>
-      <thead><tr><th>Parte</th><th>DNI</th><th>Fecha y hora</th><th>IP</th></tr></thead>
-      <tbody>${acta.partes.map(p => `<tr><td>${esc(p.nombre)}<br><span style="color:#666">${esc(p.rol)}</span></td><td>${esc(p.dni || "—")}</td><td>${fmt(p.conformidad.fecha)}</td><td>${esc(p.conformidad.ip)}</td></tr>`).join("")}</tbody>
-    </table>` : `
+      <thead><tr><th>Parte</th><th>DNI</th><th>Fecha y hora</th><th>Validación</th></tr></thead>
+      <tbody>${acta.partes.map(p => `<tr><td>${esc(p.nombre)}<br><span style="color:#666">${esc(p.rol)}</span></td><td>${esc(p.dni || "—")}</td><td>${fmt(p.conformidad.fecha)}</td><td>${esc(validacionTxt(p))}</td></tr>`).join("")}</tbody>
+    </table>
+    ${acta.remitente ? `<p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#555;margin:6px 0 0">Acta remitida a las partes desde la casilla institucional ${esc(acta.remitente)}.</p>` : ""}` : `
     <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Partes convocadas</b> (constancia de audiencia no realizada; no requiere conformidad de las partes):</p>
     <table>
       <thead><tr><th>Parte</th><th>DNI</th></tr></thead>
