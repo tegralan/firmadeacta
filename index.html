@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Firma Remota de Actas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <style>
 :root{
   --bg:#f3f5f8; --card:#ffffff; --ink:#1c2533; --muted:#5b6575; --line:#d9dee6;
@@ -61,6 +62,13 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
 .okbox{background:var(--ok-bg);color:var(--ok);border-radius:6px;padding:10px 12px;font-size:14px;margin-top:12px}
 .errbox{background:var(--err-bg);color:var(--err);border-radius:6px;padding:10px 12px;font-size:14px;margin-top:12px}
 .hidden{display:none!important}
+.seg{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.seg .opt{display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font-size:14px;font-weight:400;color:var(--ink);margin:0;cursor:pointer}
+.seg .opt input{width:auto}
+.prev{border:1px solid var(--line);border-radius:6px;margin-top:10px;background:#fafbfd;overflow:auto}
+.prev img{max-width:100%;display:block;margin:0 auto}
+.prev iframe{width:100%;height:520px;border:0}
+.prev .docx{padding:12px 16px;font-size:14px;max-height:520px;overflow:auto}
 /* Modal parte */
 .modal{position:fixed;inset:0;background:rgba(20,28,40,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;z-index:20}
 .modal .box{background:#fff;border-radius:8px;max-width:640px;width:100%;padding:0;overflow:hidden}
@@ -112,24 +120,34 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
   <!-- Paso 1 -->
   <div class="card noprint" id="p1">
     <h2>1. Redacción del acta (mediador/a)</h2>
-    <p class="sub">El texto se redacta durante o al cierre de la audiencia virtual. Al bloquearlo se calcula su huella digital (SHA-256) y ya no puede modificarse.</p>
-    <div class="row" style="margin-top:0"><button class="btn sec sm" id="btnEjemplo">Cargar ejemplo ficticio</button></div>
+    <p class="sub">El acta se redacta en la página o se sube como archivo (PDF, Word o imagen). Al bloquearla se calcula su huella digital (SHA-256) y ya no puede modificarse.</p>
+    <div class="row" style="margin-top:0"><button class="btn sec sm" id="btnEjemplo" title="Completa el formulario con datos inventados para hacer una demostración">Completar con datos de prueba</button></div>
     <div class="grid">
       <div><label>N.º de legajo</label><input id="f_numero" placeholder="MED-0000/2026"></div>
       <div><label>CUIJ (ficticio)</label><input id="f_cuij" placeholder="J-00-00000000-0/2026-0"></div>
-      <div><label>Tipo de acta</label>
-        <select id="f_tipo"><option>Acta de acuerdo</option><option>Acta de cierre sin acuerdo</option><option>Acta de audiencia (continuación)</option></select></div>
+      <div><label>Resultado del acta</label><select id="f_tipo"></select></div>
       <div><label>Mediador/a</label><input id="f_mediador" placeholder="Nombre y apellido"></div>
       <div><label>Fecha de audiencia</label><input id="f_fecha" type="date"></div>
-      <div><label>Modalidad</label><select id="f_modalidad"><option>Virtual (Microsoft Teams)</option><option>Mixta</option></select></div>
+      <div><label>Plataforma de la audiencia virtual</label>
+        <select id="f_plataforma"><option>Microsoft Teams</option><option>Zoom</option><option>Google Meet</option><option>Videollamada de WhatsApp</option><option>Otra</option></select></div>
+      <div id="w_otra" class="hidden"><label>Especificar plataforma</label><input id="f_plat_otra" placeholder="Nombre de la plataforma"></div>
     </div>
 
     <label style="margin-top:16px">Partes intervinientes</label>
     <div id="partes"></div>
     <div class="row"><button class="btn sec sm" id="btnAddParte">+ Agregar parte</button></div>
 
-    <label style="margin-top:16px">Texto del acta</label>
-    <textarea id="f_texto" placeholder="Redacción del acta / acuerdo…"></textarea>
+    <label style="margin-top:16px">Contenido del acta</label>
+    <div class="seg">
+      <label class="opt"><input type="radio" name="fuente" value="texto" checked> Redactar el texto aquí</label>
+      <label class="opt"><input type="radio" name="fuente" value="archivo"> Subir el acta (PDF, Word o imagen)</label>
+    </div>
+    <div id="w_texto"><textarea id="f_texto" placeholder="Redacción del acta / acuerdo…"></textarea></div>
+    <div id="w_archivo" class="hidden">
+      <input type="file" id="f_archivo" accept=".pdf,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <div id="arch_info"></div>
+      <div id="arch_prev"></div>
+    </div>
 
     <div class="check"><input type="checkbox" id="f_lectura"><span>Dejo constancia de que el acta fue leída en la audiencia virtual y de que cada parte manifestó verbalmente su conformidad.</span></div>
     <div id="p1err" class="errbox hidden"></div>
@@ -226,13 +244,40 @@ function aleatorio(n){ const a = new Uint8Array(n); crypto.getRandomValues(a); r
 function otp(){ const a = new Uint32Array(1); crypto.getRandomValues(a); return String(a[0] % 1000000).padStart(6,"0"); }
 function ipSimulada(){ const a = new Uint8Array(2); crypto.getRandomValues(a); return "10.20." + a[0] + "." + a[1]; }
 
-/* ============ Estado ============ */
+async function sha256Bytes(buf){
+  const h = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+function dataUrlToBlob(du){
+  const [cab, b64] = du.split(","); const tipo = cab.match(/:(.*?);/)[1];
+  const bin = atob(b64); const u = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+  return new Blob([u], {type: tipo});
+}
+const kb = (n) => n > 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.ceil(n/1024) + " KB";
+
+/* ============ Configuración ============ */
+// PROVISORIO: reemplazar por la lista exacta de resultados que se usa en EJE y en la planilla de mediaciones.
+const RESULTADOS = [
+  "Acuerdo total",
+  "Acuerdo parcial",
+  "Sin acuerdo",
+  "Pasa a nueva audiencia",
+  "Incomparecencia de la parte requirente",
+  "Incomparecencia de la parte requerida",
+  "Incomparecencia de ambas partes",
+  "Desistimiento"
+];
 const ROLES = ["Requirente","Requerido/a","Letrado/a requirente","Letrado/a requerido/a","Defensor/a","Otro"];
+const MAX_ARCHIVO = 10 * 1048576;
+
+/* ============ Estado ============ */
 let acta = null;         // acta bloqueada
 let log = [];            // registro encadenado
 let correos = [];        // bandeja simulada
 let parteActiva = null;  // índice de parte en el modal
-const STORE = "firma-actas-demo-v1";
+let archivoCargado = null; // {nombre, tipo, tamano, sha256, dataUrl}
+const STORE = "firma-actas-demo-v2";
 
 function guardar(){ try{ localStorage.setItem(STORE, JSON.stringify({acta, log, correos})); }catch(e){} }
 function cargar(){
@@ -271,10 +316,57 @@ function filaParte(p = {}){
 }
 $("btnAddParte").addEventListener("click", () => filaParte());
 
+$("f_tipo").innerHTML = RESULTADOS.map(r => `<option>${esc(r)}</option>`).join("");
+$("f_plataforma").addEventListener("change", () => $("w_otra").classList.toggle("hidden", $("f_plataforma").value !== "Otra"));
+function fuenteActual(){ return document.querySelector('input[name="fuente"]:checked').value; }
+function mostrarFuente(){
+  const f = fuenteActual();
+  $("w_texto").classList.toggle("hidden", f !== "texto");
+  $("w_archivo").classList.toggle("hidden", f !== "archivo");
+}
+document.querySelectorAll('input[name="fuente"]').forEach(r => r.addEventListener("change", mostrarFuente));
+
+/* Vista previa de un archivo de acta (PDF, imagen o Word .docx) */
+async function previewArchivo(a, cont){
+  if(!a || !a.dataUrl){ cont.innerHTML = '<div class="note">El archivo no está disponible en este navegador.</div>'; return; }
+  const blob = dataUrlToBlob(a.dataUrl);
+  const url = URL.createObjectURL(blob);
+  const desc = `<div class="row noprint" style="margin-top:8px"><a class="btn sec sm" href="${url}" download="${esc(a.nombre)}">Descargar original</a></div>`;
+  if(a.tipo.startsWith("image/")){
+    cont.innerHTML = `<div class="prev"><img src="${url}" alt="Acta"></div>` + desc;
+  } else if(a.tipo === "application/pdf"){
+    cont.innerHTML = `<div class="prev"><iframe src="${url}" title="Acta en PDF"></iframe></div>` + desc;
+  } else if(/\.docx$/i.test(a.nombre) && window.mammoth){
+    try{
+      const r = await mammoth.convertToHtml({arrayBuffer: await blob.arrayBuffer()});
+      cont.innerHTML = `<div class="prev"><div class="docx">${r.value}</div></div>` + desc;
+    }catch(e){ cont.innerHTML = '<div class="note">No se pudo mostrar la vista previa del documento Word.</div>' + desc; }
+  } else {
+    cont.innerHTML = '<div class="note">Vista previa no disponible para este formato.</div>' + desc;
+  }
+}
+
+$("f_archivo").addEventListener("change", async () => {
+  const f = $("f_archivo").files[0];
+  archivoCargado = null; $("arch_info").innerHTML = ""; $("arch_prev").innerHTML = "";
+  if(!f) return;
+  const okTipo = f.type === "application/pdf" || f.type.startsWith("image/") || /\.docx$/i.test(f.name);
+  if(!okTipo){ $("arch_info").innerHTML = '<div class="errbox">Formato no admitido. Usá PDF, Word (.docx) o imagen (JPG, PNG). Si el acta está en .doc, guardala como .docx o PDF.</div>'; return; }
+  if(f.size > MAX_ARCHIVO){ $("arch_info").innerHTML = '<div class="errbox">El archivo supera los 10 MB.</div>'; return; }
+  const buf = await f.arrayBuffer();
+  const hash = await sha256Bytes(buf);
+  const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+  archivoCargado = {nombre: f.name, tipo: f.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document", tamano: f.size, sha256: hash, dataUrl};
+  $("arch_info").innerHTML = `<div class="okbox">${esc(f.name)} · ${kb(f.size)}<br><span class="hash" style="display:inline-block;margin-top:4px">SHA-256 ${hash}</span></div>`;
+  previewArchivo(archivoCargado, $("arch_prev"));
+});
+
 $("btnEjemplo").addEventListener("click", () => {
   $("f_numero").value = "MED-0123/2026";
   $("f_cuij").value = "J-99-00000001-0/2026-0";
-  $("f_tipo").value = "Acta de acuerdo";
+  $("f_tipo").value = RESULTADOS[0];
+  $("f_plataforma").value = "Zoom"; $("w_otra").classList.add("hidden");
+  document.querySelector('input[name="fuente"][value="texto"]').checked = true; mostrarFuente();
   $("f_mediador").value = "Mediadora Ejemplo Uno";
   $("f_fecha").value = new Date().toISOString().slice(0,10);
   $("partes").innerHTML = "";
@@ -297,11 +389,24 @@ function leerForm(){
     email: d.querySelector(".p_email").value.trim(),
     tel: d.querySelector(".p_tel").value.trim()
   }));
+  const plat = $("f_plataforma").value === "Otra" ? ($("f_plat_otra").value.trim() || "Otra") : $("f_plataforma").value;
   return {
     numero: $("f_numero").value.trim(), cuij: $("f_cuij").value.trim(), tipo: $("f_tipo").value,
-    mediador: $("f_mediador").value.trim(), fecha: $("f_fecha").value, modalidad: $("f_modalidad").value,
-    partes, texto: $("f_texto").value.trim()
+    mediador: $("f_mediador").value.trim(), fecha: $("f_fecha").value, modalidad: "Virtual — " + plat,
+    plataformaSel: $("f_plataforma").value, plataformaOtra: $("f_plat_otra").value.trim(),
+    fuente: fuenteActual(), partes, texto: $("f_texto").value.trim()
   };
+}
+
+/* Comprueba que ni el texto/metadatos ni el archivo hayan cambiado desde el bloqueo */
+async function integridadOk(){
+  if((await sha256(acta.canon)) !== acta.hash) return false;
+  if(acta.contenido.archivo){
+    if(!acta.archivoData) return false;
+    const h = await sha256Bytes(await dataUrlToBlob(acta.archivoData).arrayBuffer());
+    if(h !== acta.contenido.archivo.sha256) return false;
+  }
+  return true;
 }
 
 $("btnBloquear").addEventListener("click", async () => {
@@ -309,7 +414,9 @@ $("btnBloquear").addEventListener("click", async () => {
   if(!f.numero) err.push("Falta el número de legajo.");
   if(!f.mediador) err.push("Falta el/la mediador/a.");
   if(!f.fecha) err.push("Falta la fecha.");
-  if(f.texto.length < 20) err.push("El texto del acta es demasiado breve.");
+  if(f.plataformaSel === "Otra" && !f.plataformaOtra) err.push("Especificá la plataforma utilizada.");
+  if(f.fuente === "texto" && f.texto.length < 20) err.push("El texto del acta es demasiado breve.");
+  if(f.fuente === "archivo" && !archivoCargado) err.push("Subí el archivo del acta.");
   f.partes.forEach((p,i) => {
     if(!p.nombre || !p.email || !p.tel) err.push(`Parte ${i+1}: nombre, correo y teléfono son obligatorios.`);
     else if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email)) err.push(`Parte ${i+1}: correo inválido.`);
@@ -319,18 +426,24 @@ $("btnBloquear").addEventListener("click", async () => {
   $("p1err").classList.add("hidden");
 
   // Contenido canónico: lo único que se firma
+  // El archivo entra en la huella a través de su propio SHA-256
   const contenido = {numero:f.numero, cuij:f.cuij, tipo:f.tipo, mediador:f.mediador, fecha:f.fecha, modalidad:f.modalidad,
-    partes:f.partes.map(p => ({rol:p.rol, nombre:p.nombre, dni:p.dni, email:p.email})), texto:f.texto};
+    partes:f.partes.map(p => ({rol:p.rol, nombre:p.nombre, dni:p.dni, email:p.email})),
+    texto: f.fuente === "texto" ? f.texto : "",
+    archivo: f.fuente === "archivo" ? {nombre:archivoCargado.nombre, tipo:archivoCargado.tipo, tamano:archivoCargado.tamano, sha256:archivoCargado.sha256} : null};
   const canon = JSON.stringify(contenido);
   const hash = await sha256(canon);
 
   log = []; correos = [];
   acta = {
     contenido, canon, hash, bloqueada: ahora(),
+    archivoData: f.fuente === "archivo" ? archivoCargado.dataUrl : null,
+    form: {plataformaSel: f.plataformaSel, plataformaOtra: f.plataformaOtra},
     partes: f.partes.map(p => ({...p, token: aleatorio(16), estado:"pendiente", otp:null, otpVence:null, conformidad:null, intentos:0})),
     firma: null
   };
-  await registrar("Acta bloqueada", `Legajo ${f.numero}. Huella ${hash}. Constancia de lectura en audiencia: sí.`);
+  const origen = contenido.archivo ? `Archivo ${contenido.archivo.nombre} (SHA-256 ${contenido.archivo.sha256})` : "Texto redactado en el sistema";
+  await registrar("Acta bloqueada", `Legajo ${f.numero}. ${f.tipo}. ${f.modalidad}. ${origen}. Huella ${hash}. Constancia de lectura en audiencia: sí.`);
   render();
 });
 
@@ -353,7 +466,8 @@ function abrirParte(i){
   const c = acta.contenido;
   let html = `
     <p style="margin-top:0"><b>${esc(p.nombre)}</b> — ${esc(p.rol)}<br><span class="sub">Legajo ${esc(c.numero)} · ${esc(c.tipo)} · Audiencia del ${esc(c.fecha)}</span></p>
-    <label>Texto del acta</label><div class="actatext">${esc(c.texto)}</div>
+    <span class="sub">${esc(c.modalidad)}</span>
+    ${c.archivo ? `<label>Acta (${esc(c.archivo.nombre)})</label><div id="mPrev"></div>` : `<label>Texto del acta</label><div class="actatext">${esc(c.texto)}</div>`}
     <label>Huella del documento (SHA-256)</label><div class="hash">${acta.hash}</div>`;
   if(p.estado === "conforme"){
     html += `<div class="okbox">Ya prestó conformidad el ${fmt(p.conformidad.fecha)}.</div>`;
@@ -370,6 +484,7 @@ function abrirParte(i){
   }
   $("modalBody").innerHTML = html;
   $("modal").classList.remove("hidden");
+  if(c.archivo) previewArchivo({...c.archivo, dataUrl: acta.archivoData}, $("mPrev"));
   registrar("Enlace abierto", `${p.rol} ${p.nombre} accedió al acta (token ${corto(p.token)})`);
 
   const bOtp = $("mEnviarOtp");
@@ -389,8 +504,7 @@ function abrirParte(i){
       if(e.some(x=>x.startsWith("Código incorrecto"))) await registrar("Código rechazado", `${p.rol} ${p.nombre}, intento ${p.intentos}`);
       return; }
     // Se vuelve a calcular la huella para comprobar que el texto no cambió
-    const verif = await sha256(acta.canon);
-    if(verif !== acta.hash){ $("mErr").innerHTML = `<div class="errbox">El documento fue alterado. No se puede prestar conformidad.</div>`; return; }
+    if(!(await integridadOk())){ $("mErr").innerHTML = `<div class="errbox">El documento fue alterado. No se puede prestar conformidad.</div>`; return; }
     p.estado = "conforme"; p.otp = null;
     p.conformidad = {fecha: ahora(), ip: ipSimulada(), dispositivo: navigator.userAgent.slice(0,90), hashAceptado: acta.hash};
     await registrar("Conformidad prestada", `${p.rol} ${p.nombre}. Huella aceptada ${acta.hash}. IP ${p.conformidad.ip}. Validación por código: sí.`);
@@ -402,8 +516,7 @@ $("btnCerrarModal").addEventListener("click", () => $("modal").classList.add("hi
 /* ============ Paso 3: firma ============ */
 $("btnFirmar").addEventListener("click", async () => {
   if(!acta || acta.partes.some(p => p.estado !== "conforme")) return;
-  const verif = await sha256(acta.canon);
-  if(verif !== acta.hash){ alert("La huella no coincide: el acta fue alterada."); return; }
+  if(!(await integridadOk())){ alert("La huella no coincide: el acta fue alterada."); return; }
   acta.firma = {fecha: ahora(), firmante: acta.contenido.mediador, serie: aleatorio(8).toUpperCase(),
     hashFinal: await sha256(acta.hash + JSON.stringify(acta.partes.map(p => p.conformidad)))};
   await registrar("Firma digital del mediador/a", `${acta.firma.firmante}. Certificado (simulado) N.º ${acta.firma.serie}. Huella final ${acta.firma.hashFinal}`);
@@ -414,6 +527,8 @@ $("btnNueva").addEventListener("click", () => {
   if(!confirm("¿Descartar el acta actual y comenzar una nueva?")) return;
   acta = null; log = []; correos = []; guardar();
   $("f_texto").value = ""; $("f_lectura").checked = false;
+  archivoCargado = null; $("f_archivo").value = ""; $("arch_info").innerHTML = ""; $("arch_prev").innerHTML = "";
+  document.querySelector('input[name="fuente"][value="texto"]').checked = true; mostrarFuente();
   $("partes").innerHTML = ""; filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"});
   [ "f_numero","f_cuij","f_mediador" ].forEach(id => $(id).value = "");
   render(); renderBandeja(); renderLog();
@@ -458,7 +573,7 @@ function renderDoc(){
   const c = acta.contenido, f = acta.firma;
   const urlVerif = location.href.split("#")[0] + "#verificar=" + acta.hash;
   $("doc").innerHTML = `
-    <h3>${esc(c.tipo.toUpperCase())}</h3>
+    <h3>ACTA DE AUDIENCIA DE MEDIACIÓN</h3>
     <div class="org">Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos<br>Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires</div>
     <table>
       <tr><th style="width:30%">Legajo</th><td>${esc(c.numero)}</td></tr>
@@ -466,8 +581,11 @@ function renderDoc(){
       <tr><th>Fecha de audiencia</th><td>${esc(c.fecha)}</td></tr>
       <tr><th>Modalidad</th><td>${esc(c.modalidad)}</td></tr>
       <tr><th>Mediador/a</th><td>${esc(c.mediador)}</td></tr>
+      <tr><th>Resultado</th><td>${esc(c.tipo)}</td></tr>
     </table>
-    <div class="cuerpo">${esc(c.texto)}</div>
+    ${c.archivo
+      ? `<div class="cuerpo">El contenido del acta consta en el documento adjunto <b>${esc(c.archivo.nombre)}</b> (${kb(c.archivo.tamano)}), cuya huella SHA-256 es:</div><div class="hash">${c.archivo.sha256}</div><div id="docPrev"></div>`
+      : `<div class="cuerpo">${esc(c.texto)}</div>`}
     <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12px;margin:0 0 6px"><b>Conformidades electrónicas</b> (validadas por enlace al correo constituido y código al teléfono declarado):</p>
     <table>
       <thead><tr><th>Parte</th><th>DNI</th><th>Fecha y hora</th><th>IP</th></tr></thead>
@@ -486,6 +604,7 @@ function renderDoc(){
     <div class="wm">Documento generado por un prototipo demostrativo con datos ficticios. Sin validez jurídica.</div>`;
   if(window.QRCode){ new QRCode($("qr"), {text: urlVerif, width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M}); }
   else { $("qr").innerHTML = '<div class="hash" style="width:110px">QR no disponible sin conexión</div>'; }
+  if(c.archivo) previewArchivo({...c.archivo, dataUrl: acta.archivoData}, $("docPrev"));
 }
 
 function renderBandeja(){
@@ -528,13 +647,13 @@ async function verificar(h){
   h = (h || "").trim().toLowerCase();
   if(!/^[0-9a-f]{64}$/.test(h)){ $("v_res").innerHTML = '<div class="errbox">La huella debe tener 64 caracteres hexadecimales.</div>'; return; }
   if(!acta || acta.hash !== h){ $("v_res").innerHTML = '<div class="errbox">No se encontró un acta con esa huella en este sistema.</div>'; return; }
-  const recalculo = await sha256(acta.canon);
-  const integro = recalculo === h;
+  const integro = await integridadOk();
   const c = acta.contenido;
   $("v_res").innerHTML = `<div class="${integro ? "okbox" : "errbox"}">${integro ? "Acta auténtica e íntegra." : "El contenido almacenado no coincide con la huella."}</div>
     <table style="margin-top:10px">
       <tr><th style="width:35%">Legajo</th><td>${esc(c.numero)}</td></tr>
-      <tr><th>Tipo</th><td>${esc(c.tipo)}</td></tr>
+      <tr><th>Resultado</th><td>${esc(c.tipo)}</td></tr>
+      <tr><th>Modalidad</th><td>${esc(c.modalidad)}</td></tr>
       <tr><th>Fecha de audiencia</th><td>${esc(c.fecha)}</td></tr>
       <tr><th>Conformidades</th><td>${acta.partes.filter(p=>p.estado==="conforme").length} de ${acta.partes.length}</td></tr>
       <tr><th>Firma del mediador/a</th><td>${acta.firma ? "Firmada el " + fmt(acta.firma.fecha) : "Pendiente"}</td></tr>
@@ -548,7 +667,16 @@ cargar();
 if(acta){
   const c = acta.contenido;
   $("f_numero").value = c.numero; $("f_cuij").value = c.cuij; $("f_tipo").value = c.tipo; $("f_mediador").value = c.mediador;
-  $("f_fecha").value = c.fecha; $("f_modalidad").value = c.modalidad; $("f_texto").value = c.texto; $("f_lectura").checked = true;
+  $("f_fecha").value = c.fecha; $("f_texto").value = c.texto; $("f_lectura").checked = true;
+  if(acta.form){ $("f_plataforma").value = acta.form.plataformaSel; $("f_plat_otra").value = acta.form.plataformaOtra || "";
+    $("w_otra").classList.toggle("hidden", acta.form.plataformaSel !== "Otra"); }
+  if(c.archivo){
+    document.querySelector('input[name="fuente"][value="archivo"]').checked = true;
+    archivoCargado = {...c.archivo, dataUrl: acta.archivoData};
+    $("arch_info").innerHTML = `<div class="okbox">${esc(c.archivo.nombre)} · ${kb(c.archivo.tamano)}</div>`;
+    previewArchivo(archivoCargado, $("arch_prev"));
+  }
+  mostrarFuente();
   acta.partes.forEach(p => filaParte(p));
 } else { filaParte({rol:"Requirente"}); filaParte({rol:"Requerido/a"}); }
 render(); renderBandeja(); renderLog();
