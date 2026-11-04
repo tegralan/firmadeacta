@@ -11,13 +11,15 @@ Prototipo demostrativo del circuito de firma remota de actas de audiencias de me
    - **Simulado:** enlace y código por SMS simulados dentro de la página (pestaña *Bandeja simulada*).
    - **Correo real (Microsoft 365):** el acta se envía desde la casilla institucional del/la mediador/a (Microsoft Graph `Mail.Send`, mismo registro de aplicación que `ficha`), con un código personal por parte. La parte responde desde su casilla con «PRESTO CONFORMIDAD» y su código; *Buscar respuestas en mi bandeja* (Graph `Mail.Read`) verifica remitente, frase y código y registra la conformidad. Si `Mail.Read` no está autorizado, el/la mediador/a puede registrar la respuesta verificada en Outlook.
 3. **Firma digital del mediador/a:** se habilita cuando todas las partes prestaron conformidad.
-4. **Acta final:** incluye tabla de conformidades, huellas y QR de verificación. Se puede descargar en PDF y **enviar a las partes** desde la casilla institucional del/la mediador/a (un correo individual por parte, con el PDF y, si corresponde, el documento original).
+4. **Acta final:** incluye tabla de conformidades, huellas y QR de verificación. Se puede descargar en PDF, incorporar el **acta firmada en el sistema EJE** (PDF) y **enviar a las partes** desde la casilla institucional del/la mediador/a (un correo individual por parte, con el PDF generado, el documento original si corresponde y el acta firmada en EJE).
+
+El correo de conformidad solicita responder cuanto antes, con un plazo máximo de 2 horas desde su recepción.
 
 Además, la página incluye una verificación de autenticidad por huella y un registro probatorio encadenado.
 
 ## Varias actas
 
-La barra *Mis actas* permite crear actas nuevas, pasar de una a otra y eliminarlas. Cada mediador/a ve las actas guardadas en su propio navegador. *Volver a editar* desbloquea un acta mientras no se haya enviado a ninguna parte, y un acta en modo simulado puede pasarse a correo real (se descartan los envíos simulados).
+La barra *Mis actas* permite crear actas nuevas, pasar de una a otra y eliminarlas. Cada mediador/a ve las actas guardadas en su propio navegador. *Volver a editar* desbloquea un acta mientras no se haya enviado; *Modificar acta* permite cambiar el texto o el archivo de un acta ya enviada (antes de la firma): se descartan los envíos y conformidades, se genera una nueva huella y el registro probatorio conserva lo actuado. Un acta en modo simulado puede pasarse a correo real (se descartan los envíos simulados).
 
 ## Alcance
 

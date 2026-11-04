@@ -167,6 +167,7 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
     </div>
 
     <div class="check" id="w_lectura"><input type="checkbox" id="f_lectura"><span>Dejo constancia de que el acta fue leída en la audiencia virtual y de que cada parte manifestó verbalmente su conformidad.</span></div>
+    <div id="editNota" class="note hidden"></div>
     <div id="p1err" class="errbox hidden"></div>
     <div class="row"><button class="btn" id="btnBloquear">Bloquear texto y generar acta</button><button class="btn sec hidden" id="btnEditar">Volver a editar</button></div>
   </div>
@@ -211,6 +212,15 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
       </div>
     </div>
     <div class="noprint" id="p4estado"></div>
+    <div class="noprint party" id="ejeBox" style="margin-top:12px">
+      <div class="party-h"><strong>Acta firmada en EJE (opcional)</strong></div>
+      <p class="sub" style="margin:4px 0 8px">Subí el PDF del acta con la firma del sistema EJE. Se adjunta en el correo final a las partes, junto con el acta generada por esta plataforma.</p>
+      <div class="row" style="margin-top:0">
+        <input type="file" id="f_eje" accept=".pdf,application/pdf" style="max-width:360px">
+        <button class="btn link sm hidden" id="btnQuitarEje">Quitar</button>
+      </div>
+      <div id="ejeInfo"></div>
+    </div>
     <div class="noprint" id="p4msg"></div>
     <div class="doc" id="doc" style="margin-top:12px"></div>
   </div>
@@ -315,6 +325,7 @@ let correos = [];        // bandeja simulada
 let parteActiva = null;  // índice de parte en el modal
 let archivoCargado = null; // {nombre, tipo, tamano, sha256, dataUrl}
 const STORE = "firma-actas-demo-v3";
+let editando = false;    // el acta activa se reabrió para modificarla
 let coleccion = [];      // [{id, creado, mod, acta, log, correos}]
 let activaId = null;
 
@@ -507,9 +518,14 @@ $("btnBloquear").addEventListener("click", async () => {
   const canon = JSON.stringify(contenido);
   const hash = await sha256(canon);
 
-  log = []; correos = [];
-  activaId = aleatorio(6);
-  coleccion.unshift({id: activaId, creado: ahora()});
+  correos = [];
+  const esModificacion = editando && activaId && coleccion.some(x => x.id === activaId);
+  if(!esModificacion){
+    log = [];
+    activaId = aleatorio(6);
+    coleccion.unshift({id: activaId, creado: ahora()});
+  }
+  editando = false;
   acta = {
     contenido, canon, hash, bloqueada: ahora(),
     archivoData: f.fuente === "archivo" ? archivoCargado.dataUrl : null,
@@ -519,7 +535,7 @@ $("btnBloquear").addEventListener("click", async () => {
     firma: null
   };
   const origen = contenido.archivo ? `Archivo ${contenido.archivo.nombre} (SHA-256 ${contenido.archivo.sha256})` : "Texto redactado en el sistema";
-  await registrar("Acta bloqueada", `Legajo ${f.numero}. ${f.tipo}. ${f.modalidad}. ${origen}. Huella ${hash}. ${conf ? "Constancia de lectura en audiencia: sí." : "No requiere conformidad de las partes."}`);
+  await registrar(esModificacion ? "Acta modificada y bloqueada nuevamente" : "Acta bloqueada", `Legajo ${f.numero}. ${f.tipo}. ${f.modalidad}. ${origen}. Huella ${hash}. ${conf ? "Constancia de lectura en audiencia: sí." : "No requiere conformidad de las partes."}`);
   render();
 });
 
@@ -640,6 +656,7 @@ function cuerpoCorreo(p, ref, remitente){
   ${c.archivo
     ? `<p>El acta se adjunta a este correo: <b>${esc(c.archivo.nombre)}</b>.</p>`
     : `<div style="white-space:pre-wrap;border:1px solid #d9dee6;border-radius:6px;padding:12px;background:#fafbfd">${esc(c.texto)}</div>`}
+  <p style="border-left:4px solid #9a6700;background:#fff6dc;padding:10px 14px;margin:14px 0"><b>Se solicita dar la conformidad cuanto antes, teniendo como plazo máximo 2 horas a partir de la recepción del presente correo.</b></p>
   <p><b>Huella digital del acta (SHA-256):</b><br><span style="font-family:Consolas,monospace;font-size:12px">${acta.hash}</span></p>
   <div style="border-left:4px solid #1e7a46;background:#e6f4ec;padding:12px 14px;margin:14px 0">
     <p style="margin:0 0 10px">Para prestar conformidad, presione el botón y <b>envíe el correo que se abre, sin modificarlo</b>, desde esta misma casilla:</p>
@@ -865,18 +882,18 @@ function formDesdeActa(){
 }
 function refrescarTodo(){ formDesdeActa(); render(); renderBandeja(); renderLog(); renderLista(); }
 function nuevaActa(){
-  guardar();
+  guardar(); editando = false;
   acta = null; log = []; correos = []; activaId = null;
   guardar(); refrescarTodo(); irA("circuito"); window.scrollTo(0, 0);
 }
 function abrirActa(id){
-  guardar();
+  guardar(); editando = false;
   const e = coleccion.find(x => x.id === id); if(!e) return;
   activaId = id; acta = e.acta; log = e.log || []; correos = e.correos || [];
   guardar(); refrescarTodo();
 }
 function estadoActa(a){
-  if(a.firma) return a.envioFinal ? "Firmada y enviada" : "Firmada";
+  if(a.firma) return (a.envioFinal ? "Firmada y enviada" : "Firmada") + (a.actaEje ? " · con acta EJE" : "");
   if(!a.requiereConf) return "Lista para firmar";
   const ok = a.partes.filter(p => p.estado === "conforme").length;
   return `Conformidades ${ok}/${a.partes.length}`;
@@ -899,13 +916,50 @@ $("btnEliminar").addEventListener("click", () => {
   acta = null; log = []; correos = []; activaId = null;
   guardar(); refrescarTodo();
 });
-$("btnEditar").addEventListener("click", () => {
-  if(!acta || acta.partes.some(p => p.estado !== "pendiente" && p.estado !== "no-requerida") || acta.firma) return;
-  // Nada se envió todavía: se descarta la versión bloqueada y se conserva lo cargado en el formulario
-  coleccion = coleccion.filter(x => x.id !== activaId);
-  acta = null; log = []; correos = []; activaId = null;
-  guardar(); render(); renderBandeja(); renderLog(); renderLista();
+$("btnEditar").addEventListener("click", async () => {
+  if(!acta || acta.firma) return;
+  const enviado = acta.partes.some(p => p.estado !== "pendiente" && p.estado !== "no-requerida");
+  if(enviado && !confirm("Las partes ya recibieron esta versión del acta.\n\nSi la modificás, se descartan los envíos y conformidades registrados y habrá que enviarla nuevamente a todas las partes. El registro probatorio conserva lo actuado.\n\n¿Continuar?")) return;
+  await registrar("Acta reabierta para modificación", enviado
+    ? `Se descartan los envíos y conformidades de la versión con huella ${acta.hash}.`
+    : `Versión con huella ${acta.hash}, no enviada a las partes.`);
+  editando = true;
+  acta = null; correos = [];
+  render(); renderBandeja(); renderLog(); renderLista();
+  window.scrollTo(0, 0);
 });
+
+/* ============ Acta firmada en EJE ============ */
+$("f_eje").addEventListener("change", async () => {
+  const f = $("f_eje").files[0];
+  if(!f || !acta) return;
+  try{
+    if(!(f.type === "application/pdf" || /\.pdf$/i.test(f.name))) throw new Error("El acta firmada en EJE debe estar en formato PDF.");
+    if(f.size > MS.maxAdjunto) throw new Error("El PDF supera 3 MB y no puede adjuntarse al correo.");
+    const buf = await f.arrayBuffer();
+    const hash = await sha256Bytes(buf);
+    const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+    const reemplazo = !!acta.actaEje;
+    acta.actaEje = {nombre: f.name, tamano: f.size, sha256: hash, dataUrl, fecha: ahora()};
+    await registrar(reemplazo ? "Acta firmada en EJE reemplazada" : "Acta firmada en EJE incorporada", `${f.name} (${kb(f.size)}). SHA-256 ${hash}.`);
+    msgP4("", ""); render(); renderLista();
+  }catch(e){ msgP4("errbox", esc(e.message)); }
+  $("f_eje").value = "";
+});
+$("btnQuitarEje").addEventListener("click", async () => {
+  if(!acta || !acta.actaEje) return;
+  if(!confirm(`¿Quitar el acta firmada en EJE (${acta.actaEje.nombre})?`)) return;
+  const n = acta.actaEje.nombre; delete acta.actaEje;
+  await registrar("Acta firmada en EJE quitada", n);
+  render(); renderLista();
+});
+function renderEje(){
+  const a = acta && acta.actaEje;
+  $("btnQuitarEje").classList.toggle("hidden", !a);
+  $("ejeInfo").innerHTML = a
+    ? `<div class="okbox">${esc(a.nombre)} · ${kb(a.tamano)} · incorporada el ${fmt(a.fecha)}<br><span class="hash" style="display:inline-block;margin-top:4px">SHA-256 ${a.sha256}</span><br><a class="btn sec sm" style="margin-top:6px" href="${URL.createObjectURL(dataUrlToBlob(a.dataUrl))}" download="${esc(a.nombre)}">Ver / descargar</a></div>`
+    : "";
+}
 
 /* ============ Acta firmada: PDF y envío a las partes ============ */
 function msgP4(tipo, html){ $("p4msg").innerHTML = html ? `<div class="${tipo}">${html}</div>` : ""; }
@@ -978,6 +1032,11 @@ async function generarPdfActa(){
     escribir("Constancia de audiencia no realizada: no requiere conformidad de las partes.", {sz: 9});
   }
 
+  if(acta.actaEje){
+    seccion("ACTA FIRMADA EN EJE");
+    escribir(`Se adjunta el acta firmada en el sistema EJE: "${acta.actaEje.nombre}" (${kb(acta.actaEje.tamano)}), incorporada el ${fmt(acta.actaEje.fecha)}. Huella SHA-256:`, {esp: 1});
+    escribir(acta.actaEje.sha256, {f: mono, sz: 8});
+  }
   seccion("FIRMA");
   escribir(`Firmado digitalmente (simulación) por ${f.firmante} - Mediador/a`, {f: neg, esp: 1});
   dato("Fecha", fmt(f.fecha)); dato("Certificado (simulado) N.º", f.serie);
@@ -1013,7 +1072,7 @@ function cuerpoFinal(p){
   <p style="color:#a12a2a;font-size:11px;margin:0 0 10px">PROTOTIPO DEMOSTRATIVO — DATOS FICTICIOS — SIN VALIDEZ JURÍDICA</p>
   <h2 style="color:#1f4e79;margin:0 0 12px">Acta de audiencia de mediación firmada</h2>
   <p>Sr./Sra. ${esc(p.nombre)}:</p>
-  <p>Se le remite el acta firmada de la audiencia de mediación virtual del legajo <b>${esc(c.numero)}</b>, celebrada el ${esc(c.fecha)}, con el resultado <b>${esc(c.tipo)}</b>. El acta se adjunta en formato PDF${c.archivo ? ", junto con el documento original" : ""}.</p>
+  <p>Se le remite el acta firmada de la audiencia de mediación virtual del legajo <b>${esc(c.numero)}</b>, celebrada el ${esc(c.fecha)}, con el resultado <b>${esc(c.tipo)}</b>. El acta se adjunta en formato PDF${c.archivo ? ", junto con el documento original" : ""}${acta.actaEje ? ", y el <b>acta firmada en el sistema EJE</b>" : ""}.</p>
   <p><b>Huella digital del acta (SHA-256):</b><br><span style="font-family:Consolas,monospace;font-size:12px">${acta.hash}</span></p>
   <p style="color:#5b6575;font-size:12px">Referencia ${refActa()}. Este correo es personal: no lo reenvíe.<br>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires.</p>
 </div>`;
@@ -1033,6 +1092,11 @@ async function enviarFinal(){
     if(acta.contenido.archivo){
       if(acta.contenido.archivo.tamano > MS.maxAdjunto) throw new Error("El archivo original supera 3 MB y no puede adjuntarse.");
       adjuntos.push({"@odata.type": "#microsoft.graph.fileAttachment", name: acta.contenido.archivo.nombre, contentType: acta.contenido.archivo.tipo, contentBytes: acta.archivoData.split(",")[1]});
+    }
+    if(acta.actaEje){
+      const usados = adjuntos.map(a => a.name.toLowerCase());
+      const nom = usados.includes(acta.actaEje.nombre.toLowerCase()) ? "Firmada_EJE_" + acta.actaEje.nombre : acta.actaEje.nombre;
+      adjuntos.push({"@odata.type": "#microsoft.graph.fileAttachment", name: nom, contentType: "application/pdf", contentBytes: acta.actaEje.dataUrl.split(",")[1]});
     }
     const acc = await tokenMS(MS.envio);
     const enviados = [];
@@ -1055,7 +1119,7 @@ async function enviarFinal(){
       enviados.push(p.email);
     }
     acta.envioFinal = {fecha: ahora(), remitente: acc.cuenta.username, destinatarios: enviados};
-    await registrar("Acta firmada enviada a las partes", `Destinatarios: ${enviados.join(", ")}. Desde ${acc.cuenta.username}. Adjunto ${nombrePdf()}.`);
+    await registrar("Acta firmada enviada a las partes", `Destinatarios: ${enviados.join(", ")}. Desde ${acc.cuenta.username}. Adjuntos: ${adjuntos.map(a => a.name).join(", ")}.`);
     msgP4("", ""); render(); renderLista();
   }catch(e){
     msgP4("errbox", esc(e.message === "CONSENT" ? "La cuenta no tiene autorizado el permiso para enviar correo desde esta aplicación." : e.message));
@@ -1075,8 +1139,12 @@ function render(){
     const n = +s.dataset.s; s.classList.toggle("cur", n === paso); s.classList.toggle("done", n < paso);
   });
   bloquearForm(!!acta);
-  const puedeEditar = acta && !acta.firma && acta.partes.every(p => p.estado === "pendiente" || p.estado === "no-requerida");
+  const puedeEditar = acta && !acta.firma;
+  const yaEnviado = acta && acta.partes.some(p => p.estado !== "pendiente" && p.estado !== "no-requerida");
   $("btnEditar").classList.toggle("hidden", !puedeEditar); $("btnEditar").disabled = false;
+  $("btnEditar").textContent = yaEnviado ? "Modificar acta" : "Volver a editar";
+  $("editNota").classList.toggle("hidden", !(editando && !acta));
+  $("editNota").innerHTML = "Estás modificando el acta. Podés cambiar el texto o subir otro archivo. Al bloquearla nuevamente se genera una nueva huella y deberá enviarse otra vez a las partes.";
   const s2 = document.querySelector('.step[data-s="2"]');
   s2.innerHTML = acta && !conf ? "<b>Paso 2</b>No requerida (audiencia no realizada)" : "<b>Paso 2</b>Conformidad de las partes";
   $("p2").classList.toggle("hidden", !acta || !conf);
@@ -1117,11 +1185,11 @@ function render(){
   $("btnFirmar").disabled = !!acta.firma || faltan > 0;
 
   if(acta.firma){
-    renderDoc();
+    renderDoc(); renderEje();
     $("btnEnviarFinal").textContent = acta.envioFinal ? "Reenviar acta a las partes" : "Enviar acta a las partes";
     $("p4estado").innerHTML = acta.envioFinal
       ? `<div class="okbox">Acta firmada enviada el ${fmt(acta.envioFinal.fecha)} a ${acta.envioFinal.destinatarios.map(esc).join(", ")}, desde ${esc(acta.envioFinal.remitente)}.</div>`
-      : `<div class="note">El acta está firmada. Falta enviarla a las partes con <b>Enviar acta a las partes</b>.</div>`;
+      : `<div class="note">El acta está firmada. ${acta.actaEje ? "El acta firmada en EJE se adjuntará al correo." : "Si corresponde, subí el acta firmada en EJE."} Después, enviala con <b>Enviar acta a las partes</b>.</div>`;
   }
 }
 
