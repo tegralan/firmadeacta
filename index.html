@@ -206,15 +206,15 @@ th{background:var(--chip);font-size:12px;text-transform:uppercase;letter-spacing
       <h2 style="margin:0">4. Acta final</h2>
       <div class="row" style="margin-top:0">
         <button class="btn ok sm" id="btnEnviarFinal">Enviar acta a las partes</button>
-        <button class="btn sec sm" id="btnPdf">Descargar PDF</button>
+        <button class="btn sec sm" id="btnPdf">Descargar acta de conformidad</button>
         <button class="btn sec sm" onclick="window.print()">Imprimir</button>
         <button class="btn sec sm" id="btnNueva">Nueva acta</button>
       </div>
     </div>
     <div class="noprint" id="p4estado"></div>
     <div class="noprint party" id="ejeBox" style="margin-top:12px">
-      <div class="party-h"><strong>Acta firmada en EJE (opcional)</strong></div>
-      <p class="sub" style="margin:4px 0 8px">Subí el PDF del acta con la firma del sistema EJE. Se adjunta en el correo final a las partes, junto con el acta generada por esta plataforma.</p>
+      <div class="party-h"><strong>Acta de la audiencia firmada en EJE</strong></div>
+      <p class="sub" style="margin:4px 0 8px">Una vez firmada el acta en el sistema EJE, subí el PDF. El correo final a las partes lleva dos adjuntos: el acta de conformidad y esta acta firmada en EJE.</p>
       <div class="row" style="margin-top:0">
         <input type="file" id="f_eje" accept=".pdf,application/pdf" style="max-width:360px">
         <button class="btn link sm hidden" id="btnQuitarEje">Quitar</button>
@@ -966,7 +966,8 @@ function msgP4(tipo, html){ $("p4msg").innerHTML = html ? `<div class="${tipo}">
 const pdfTxt = (v) => String(v == null ? "" : v)
   .replace(/[\u2014\u2013]/g, "-").replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'").replace(/\u2026/g, "...")
   .normalize("NFC").replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "?");
-function nombrePdf(){ return "Acta_" + acta.contenido.numero.replace(/[^A-Za-z0-9-]+/g, "_") + ".pdf"; }
+function tituloPdf(){ return acta.requiereConf ? "ACTA DE CONFORMIDAD" : "CONSTANCIA DE AUDIENCIA NO REALIZADA"; }
+function nombrePdf(){ return (acta.requiereConf ? "Acta_de_conformidad_" : "Constancia_") + acta.contenido.numero.replace(/[^A-Za-z0-9-]+/g, "_") + ".pdf"; }
 function bytesB64(u8){
   let bin = ""; for(let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
   return btoa(bin);
@@ -1007,7 +1008,8 @@ async function generarPdfActa(){
   escribir("PROTOTIPO DEMOSTRATIVO - DATOS FICTICIOS - SIN VALIDEZ JURÍDICA", {f: neg, sz: 8, color: rgb(.63,.16,.16), esp: 8});
   escribir("CENTRO DE MEDIACIÓN Y MÉTODOS ALTERNATIVOS DE ABORDAJE Y SOLUCIÓN DE CONFLICTOS", {f: neg, sz: 9, color: AZUL, esp: 1});
   escribir("Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires", {sz: 9, esp: 12});
-  escribir("ACTA DE AUDIENCIA DE MEDIACIÓN", {f: neg, sz: 15, esp: 8});
+  escribir(tituloPdf(), {f: neg, sz: 15, esp: 1});
+  escribir("Audiencia de mediación virtual", {sz: 10, esp: 8});
 
   seccion("DATOS DE LA AUDIENCIA");
   dato("Legajo", c.numero); dato("CUIJ", c.cuij); dato("Fecha de audiencia", c.fecha);
@@ -1034,7 +1036,7 @@ async function generarPdfActa(){
 
   if(acta.actaEje){
     seccion("ACTA FIRMADA EN EJE");
-    escribir(`Se adjunta el acta firmada en el sistema EJE: "${acta.actaEje.nombre}" (${kb(acta.actaEje.tamano)}), incorporada el ${fmt(acta.actaEje.fecha)}. Huella SHA-256:`, {esp: 1});
+    escribir(`Acta de la audiencia firmada en el sistema EJE: "${acta.actaEje.nombre}" (${kb(acta.actaEje.tamano)}), incorporada el ${fmt(acta.actaEje.fecha)}. Huella SHA-256:`, {esp: 1});
     escribir(acta.actaEje.sha256, {f: mono, sz: 8});
   }
   seccion("FIRMA");
@@ -1070,9 +1072,13 @@ function cuerpoFinal(p){
   const c = acta.contenido;
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1c2533;line-height:1.5;max-width:720px">
   <p style="color:#a12a2a;font-size:11px;margin:0 0 10px">PROTOTIPO DEMOSTRATIVO — DATOS FICTICIOS — SIN VALIDEZ JURÍDICA</p>
-  <h2 style="color:#1f4e79;margin:0 0 12px">Acta de audiencia de mediación firmada</h2>
+  <h2 style="color:#1f4e79;margin:0 0 12px">Acta de audiencia de mediación</h2>
   <p>Sr./Sra. ${esc(p.nombre)}:</p>
-  <p>Se le remite el acta firmada de la audiencia de mediación virtual del legajo <b>${esc(c.numero)}</b>, celebrada el ${esc(c.fecha)}, con el resultado <b>${esc(c.tipo)}</b>. El acta se adjunta en formato PDF${c.archivo ? ", junto con el documento original" : ""}${acta.actaEje ? ", y el <b>acta firmada en el sistema EJE</b>" : ""}.</p>
+  <p>Con relación a la audiencia de mediación virtual del legajo <b>${esc(c.numero)}</b>, celebrada el ${esc(c.fecha)}, con el resultado <b>${esc(c.tipo)}</b>, se adjuntan:</p>
+  <ul>
+    <li>${acta.requiereConf ? "El <b>acta de conformidad</b>, con el registro de las conformidades prestadas por las partes." : "La <b>constancia de audiencia no realizada</b>."}</li>
+    ${acta.actaEje ? "<li>El <b>acta de la audiencia firmada</b> en el sistema EJE.</li>" : ""}
+  </ul>
   <p><b>Huella digital del acta (SHA-256):</b><br><span style="font-family:Consolas,monospace;font-size:12px">${acta.hash}</span></p>
   <p style="color:#5b6575;font-size:12px">Referencia ${refActa()}. Este correo es personal: no lo reenvíe.<br>Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos — Consejo de la Magistratura de la Ciudad Autónoma de Buenos Aires.</p>
 </div>`;
@@ -1082,20 +1088,17 @@ async function enviarFinal(){
   if(!acta || !acta.firma) return;
   const dest = acta.partes.filter(p => p.email);
   if(!dest.length){ msgP4("errbox", "Ninguna parte tiene correo electrónico cargado."); return; }
-  if(!confirm(`Se enviará el acta firmada, en un correo individual, a: ${dest.map(p => p.email).join(", ")}. ¿Continuar?`)) return;
+  if(!acta.actaEje && !confirm("Todavía no subiste el acta de la audiencia firmada en EJE.\n\nEl correo llevará solo el acta de conformidad. ¿Enviar de todos modos?")) return;
+  const adj = [tituloPdf().toLowerCase()].concat(acta.actaEje ? ["acta de la audiencia firmada en EJE"] : []).join(" y ");
+  if(!confirm(`Se enviará ${adj}, en un correo individual, a: ${dest.map(p => p.email).join(", ")}. ¿Continuar?`)) return;
   const btn = $("btnEnviarFinal"); btn.disabled = true;
   try{
     if(!(await integridadOk())) throw new Error("La huella no coincide: el acta fue alterada.");
     msgP4("note", "Generando el PDF del acta…");
     const pdfBytes = await generarPdfActa();
     const adjuntos = [{"@odata.type": "#microsoft.graph.fileAttachment", name: nombrePdf(), contentType: "application/pdf", contentBytes: bytesB64(pdfBytes)}];
-    if(acta.contenido.archivo){
-      if(acta.contenido.archivo.tamano > MS.maxAdjunto) throw new Error("El archivo original supera 3 MB y no puede adjuntarse.");
-      adjuntos.push({"@odata.type": "#microsoft.graph.fileAttachment", name: acta.contenido.archivo.nombre, contentType: acta.contenido.archivo.tipo, contentBytes: acta.archivoData.split(",")[1]});
-    }
     if(acta.actaEje){
-      const usados = adjuntos.map(a => a.name.toLowerCase());
-      const nom = usados.includes(acta.actaEje.nombre.toLowerCase()) ? "Firmada_EJE_" + acta.actaEje.nombre : acta.actaEje.nombre;
+      const nom = acta.actaEje.nombre.toLowerCase() === nombrePdf().toLowerCase() ? "Firmada_EJE_" + acta.actaEje.nombre : acta.actaEje.nombre;
       adjuntos.push({"@odata.type": "#microsoft.graph.fileAttachment", name: nom, contentType: "application/pdf", contentBytes: acta.actaEje.dataUrl.split(",")[1]});
     }
     const acc = await tokenMS(MS.envio);
@@ -1189,7 +1192,7 @@ function render(){
     $("btnEnviarFinal").textContent = acta.envioFinal ? "Reenviar acta a las partes" : "Enviar acta a las partes";
     $("p4estado").innerHTML = acta.envioFinal
       ? `<div class="okbox">Acta firmada enviada el ${fmt(acta.envioFinal.fecha)} a ${acta.envioFinal.destinatarios.map(esc).join(", ")}, desde ${esc(acta.envioFinal.remitente)}.</div>`
-      : `<div class="note">El acta está firmada. ${acta.actaEje ? "El acta firmada en EJE se adjuntará al correo." : "Si corresponde, subí el acta firmada en EJE."} Después, enviala con <b>Enviar acta a las partes</b>.</div>`;
+      : `<div class="note">El acta está firmada. ${acta.actaEje ? "El acta firmada en EJE se adjuntará al correo." : "Falta subir el acta de la audiencia firmada en EJE."} Después, enviala con <b>Enviar acta a las partes</b>.</div>`;
   }
 }
 
